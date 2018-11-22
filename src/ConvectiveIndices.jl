@@ -1,4 +1,4 @@
-module ParcelMethod
+module ConvectiveIndices
 export trapz
 export saturation_vapor_pressure_liquid
 export moistlaps
@@ -6,9 +6,9 @@ export virtualtemp
 export liftparcel
 export thermo_rh
 export rh_to_r
-export dewpoint_to_q
 export r_to_rh
 export q_to_rh
+export dewpoint_to_q
 export calc_CAPE_thetae
 
 using Interpolations
@@ -18,18 +18,18 @@ using Statistics
 """
 numerical integration of y (Vector) with respect to the coordinates specified by x using the trapezoidal rule
 """
-function trapz{T<:Real}(x::Vector{T}, y::Vector{T})
-           local len = length(y)
-           if (len != length(x))
-               error("Vectors must be of same length")
-           end
-           r = 0.0
-           for i in 2:len
-               r += (x[i] - x[i-1]) * (y[i] + y[i-1])
-           end
-           r/2.0
-       end
 
+function trapz(x::Vector{R}, y::Vector{R}) where R<:Real
+    local len = length(y)
+    if (len != length(x))
+        error("Vectors must be of same length")
+    end
+    r = 0.0
+    for i in 2:len
+       r += (x[i] - x[i-1]) * (y[i] + y[i-1])
+    end
+    r/2.0
+end
 
 
 """
@@ -190,7 +190,7 @@ function thermo_rh(tk::Number,p::Number,rh::Number)
 	thetaes = theta*exp(( (3.376/tk_lcl) - 0.00254)*rsat*(1+0.81 * rg *1e-3));   # eqn 38, Bolton
 
 	#LCL height using Poisson's equation
-	p_lcl =  0.01*p.*((tk_lcl./tk).^(1./k));
+	p_lcl =  0.01*p.*((tk_lcl./tk).^(1.0/k));
 
 	return theta, thetae, thetaes, p_lcl, tk_lcl, r 
 
@@ -201,7 +201,7 @@ function (theta, thetae, thetaes, p_lcl, tk_lcl, r) = thermo_rh(tks,ps,rhs)
 thermo_rh generates thermodynamic variables from t(K) p(hPa) rh(%) N-element arrays 
 output [theta, thetae, r, tk_lcl, p_lcl] in K, K, kg/kg, K, hPa; r = water vapour mixing ratio
 """
-function thermo_rh{T<:AbstractFloat}(tk::Vector{T},p::Vector{T},rh::Vector{T})
+function thermo_rh(tk::Vector{F},p::Vector{F},rh::Vector{F}) where F<:AbstractFloat
 
 	# changed rsat denominator from p to p-es (3 may 07)
 	# Realised thetae calculation is incorrect (17 Nov 2009)
@@ -352,7 +352,7 @@ thunderstorm predictor in Europe in [1].
 
 [1] Ukkonen et al. (2018)
 """
-function calc_CAPE_thetae{T<:AbstractFloat}(ps::Vector{T},tks::Vector{T},qs::Vector{T},zs::Vector{T}; parcel::Integer=1,dp_mix::Number=50,dp::Number=5,kiss::Integer=0)
+function calc_CAPE_thetae(ps::Vector{F},tks::Vector{F},qs::Vector{F},zs::Vector{F}; parcel::Integer=1,dp_mix::Number=50,dp::Number=5,kiss::Integer=0) where F<:AbstractFloat
 
 	local g = 9.80665
 
@@ -490,7 +490,7 @@ A process-based framework for quantifying the atmospheric preconditioning of sur
 """
 function calc_BCL(qs,rhs,zs)
 
-	qsats = 100./rhs .* qs;
+	qsats = 100.0/rhs .* qs;
 	qm = repeat(qs,1,length(qs))
 	tril!(qm);  # zeros above diagonal (upper right corner)
 	qm[qm.==0] = NaN; #replace with NaNs
