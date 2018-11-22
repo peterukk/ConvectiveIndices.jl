@@ -10,9 +10,9 @@ export dewpoint_to_q
 export r_to_rh
 export q_to_rh
 export calc_CAPE_thetae
-export calc_lift
 
 using Interpolations
+using LinearAlgebra
 using Statistics
 
 """
@@ -41,7 +41,7 @@ Q. J. R. Meteorol. Soc. (2005), 131, pp. 1539-1565
 function saturation_vapor_pressure_liquid(T::Number)
 
         if ~(all(123 .< T) && all(T .< 332))
-            warn("Temperature out of range [123-332] K.")
+            @warn "Temperature out of range [123-332] K."
         end
 
         temp = (54.842763 - (6763.22./ T) - 4.210 * log(T) + 0.000367 * T) + (tanh( 0.0415 * (T - 218.8) )*(53.878 - (1331.22/T) - 9.44523*log(T) + 0.014025 * T))
@@ -358,7 +358,7 @@ function calc_CAPE_thetae{T<:AbstractFloat}(ps::Vector{T},tks::Vector{T},qs::Vec
 
 	#Check that profiles are descending, otherwise flip the arrays
 	if ps[end] < ps[1]
-		tks = flipdim(tks,1); rhs = flipdim(rhs,1); ps = flipdim(ps,1)
+		tks = reverse(tks,1); rhs = reverse(rhs,1); ps = reverse(ps,1)
 	end
 
 	sp = ps[end]
@@ -414,7 +414,7 @@ function calc_CAPE_thetae{T<:AbstractFloat}(ps::Vector{T},tks::Vector{T},qs::Vec
 	_,thetae_parc,_,pLCL = thermo_rh(tk0,p0,rh0)
 
 	# LIFTED INDEX
-	i500 = indmin(abs.(pres - 500))
+	i500 = findmin(abs.(pres - 500))[2]
 	LI = thetaes_env[i500] - thetae_parc
 
 	# CAPE AND CIN
@@ -459,9 +459,9 @@ function calc_CAPE_thetae{T<:AbstractFloat}(ps::Vector{T},tks::Vector{T},qs::Vec
 		CIN_LCL = g*trapz(z_env[iLCL:iPL],tdiff[iLCL:iPL])
 	end
 
-	i300 = indmin(abs.(pres - 300))
-	i600 = indmin(abs.(pres - 600))
-	i800 = indmin(abs.(pres - 800))
+	i300 = findmin(abs.(pres - 300))[2]
+	i600 = findmin(abs.(pres - 600))[2]
+	i800 = findmin(abs.(pres - 800))[2]
 
 	# MEAN RELATIVE HUMIDITIES 
 	MRH1 =  mean(rh_env[i600:i800])
@@ -491,7 +491,7 @@ A process-based framework for quantifying the atmospheric preconditioning of sur
 function calc_BCL(qs,rhs,zs)
 
 	qsats = 100./rhs .* qs;
-	qm = repmat(qs,1,length(qs))
+	qm = repeat(qs,1,length(qs))
 	tril!(qm);  # zeros above diagonal (upper right corner)
 	qm[qm.==0] = NaN; #replace with NaNs
 
@@ -503,9 +503,9 @@ function calc_BCL(qs,rhs,zs)
 	
 	z = collect(zs[1]:-10:zs[end]) 
 
-	knots = (flipdim(zs,1),);
-	itp = interpolate(knots,flipdim(qmix,1),Gridded(Linear())); qmix_int = itp[z]
-	itp = interpolate(knots,flipdim(qsats,1),Gridded(Linear())); qsat_int = itp[z]
+	knots = (reverse(zs,1),);
+	itp = interpolate(knots,reverse(qmix,1),Gridded(Linear())); qmix_int = itp[z]
+	itp = interpolate(knots,reverse(qsats,1),Gridded(Linear())); qsat_int = itp[z]
 	iBCL = findlast(qmix_int.>qsat_int)
 	
 	zBCL = z[iBCL]
