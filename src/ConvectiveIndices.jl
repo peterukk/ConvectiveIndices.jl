@@ -331,7 +331,7 @@ Calculate convective predictors such as **CAPE** and **CIN** for a parcel of cho
 # Examples
 
 ```jldoctest 
-julia> LI,CAPE,CIN = calc_CAPE_theta(ps,tks,qs,zs,sp, parcel = 2, dp_mix = 100, kiss= 1)
+julia> LI,CAPE,CIN = calc_CAPE_theta(ps,tks,qs,zs,parcel = 2, dp_mix = 100, kiss= 1)
 (-27.416924139871526, 4428.182537242374, 137.85516940477973)
 ```
 
