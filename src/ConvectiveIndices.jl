@@ -220,14 +220,16 @@ function thermo_rh(tk::Vector{F},p::Vector{F},rh::Vector{F}) where F<:AbstractFl
     if (len != length(p))
 		error("All vectors must be of same length")
     end
-        
-    theta = Vector{T}(len)
-    thetae = Vector{T}(len)
-	thetaes = Vector{T}(len)
-	p_lcl = Vector{T}(len)
-	tk_lcl = Vector{T}(len)
-	r = Vector{T}(len)
-	rsat = Vector{T}(len)
+		
+
+	
+    theta = Vector{F}(undef,len)
+    thetae = Vector{F}(undef,len)
+	thetaes = Vector{F}(undef,len)
+	p_lcl = Vector{F}(undef,len)
+	tk_lcl = Vector{F}(undef,len)
+	r = Vector{F}(undef,len)
+	rsat = Vector{F}(undef,len)
 
     for i in 1:len
 		a = ((p[i]/p0).^(-K));
@@ -259,6 +261,7 @@ function thermo_rh(tk::Vector{F},p::Vector{F},rh::Vector{F}) where F<:AbstractFl
 	return theta, thetae, thetaes, p_lcl, tk_lcl, r, rsat
 
 end
+
 
 
 """
@@ -370,16 +373,18 @@ function calc_CAPE_thetae(ps::Vector{F},tks::Vector{F},qs::Vector{F},zs::Vector{
 
 	# Interpolation: use "Interpolations" package for linear interpolation on a non-uniform grid
 	knots = (ps,);
-	itp = interpolate(knots,tks,Gridded(Linear())); tk_env = itp[pres]
-	itp = interpolate(knots,rhs,Gridded(Linear())); rh_env = itp[pres]
-	itp = interpolate(knots,zs,Gridded(Linear())); z_env = itp[pres]
+
+
+	itp = interpolate(knots,tks,Gridded(Linear())); tk_env = itp(pres)
+	itp = interpolate(knots,rhs,Gridded(Linear())); rh_env = itp(pres)
+	itp = interpolate(knots,zs,Gridded(Linear())); z_env = itp(pres)
 
 	theta,thetae,thetaes = thermo_rh(tks,ps,rhs)
 	
 	# !!!!! Still to add theta_def?
 	
-	itp = interpolate(knots,thetae,Gridded(Linear())); thetae_env = itp[pres]
-	itp = interpolate(knots,thetaes,Gridded(Linear())); thetaes_env = itp[pres]
+	itp = interpolate(knots,thetae,Gridded(Linear())); thetae_env = itp(pres)
+	itp = interpolate(knots,thetaes,Gridded(Linear())); thetaes_env = itp(pres)
 
 	# FIND PARCEL
 	if parcel == 1 #	--> MOST UNSTABLE
