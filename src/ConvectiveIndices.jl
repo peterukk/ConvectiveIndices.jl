@@ -25,11 +25,11 @@ function trapz(x::Vector{R}, y::Vector{R}) where R<:Real
     if (len != length(x))
         error("Vectors must be of same length")
     end
-    r = 0.0
+    r = 0.0f0
     for i in 2:len
        r += (x[i] - x[i-1]) * (y[i] + y[i-1])
     end
-    r/2.0
+    r/2.0f0
 end
 
 
@@ -45,7 +45,7 @@ function saturation_vapor_pressure_liquid(T::Number)
             @warn "Temperature out of range [123-332] K."
         end
 
-        temp = (54.842763 - (6763.22./ T) - 4.210 * log(T) + 0.000367 * T) + (tanh( 0.0415 * (T - 218.8) )*(53.878 - (1331.22/T) - 9.44523*log(T) + 0.014025 * T))
+        temp = (54.842763f0 - (6763.22f0 ./ T) - 4.210f0  * log(T) + 0.000367f0  * T) + (tanh( 0.0415f0  * (T - 218.8f0 ) )*(53.878f0  - (1331.22f0 /T) - 9.44523f0 *log(T) + 0.014025f0  * T))
         es = exp(temp);
 
 end
@@ -128,8 +128,8 @@ Return relative humidity [%] given temperature [K], pressure [hPa] and specific 
 """
 function q_to_rh(tk::Number, p::Number, q::Number)
 	es = saturation_vapor_pressure_liquid(tk);
-	local c = 18.0152/28.9644;
-	e = (q*p*100)/(c + (1 - c)*q);
+	local c = 18.0152f0/28.9644f0;
+	e = (q*p*100f0)/(c + (1 - c)*q);
 	RH = 100 * e/es;
 end
 
@@ -158,40 +158,36 @@ function thermo_rh(tk::Number,p::Number,rh::Number)
 	# Changed to used formulae of Bolton (1980), for pseudo-equivalent p.t.
 
 	#convert t,p to SI units
-	p = p*100; #Pa
+	p = p.*100f0; #Pa
 
-	#calculate the potential temperature from temperature array
-	p0=1000*100;	#reference pressure in Pa
-	R=287;		#gas constant
-	cp=1004;	#specific heat wrt pressure
-	K= R/cp;
-	a = ((p/p0)^(-K));
+	local p0 = 100000f0;	#reference pressure in Pa
+	local R = 287f0;		#gas constant
+	local K = R./1004f0;
+	local epsi = 0.62198f0;
+
+	a = ((p/p0).^(-K));
 	theta = tk*a;
-
-	#calculate equivalent potential temperature
-	#Lv = 2.5e6; 	#latent heat of vapourisation
-	eps = 0.62198; 	#Rd/Rv
-
 	es = saturation_vapor_pressure_liquid(tk); # Saturation vapor pressure
 	e = ((rh/100)*es);                              # vapour pressure (Pa)
 
+
 	# Calculate water vapour mixing ratio r and q specific humidity
-	r = (eps*e)/(p-e);
-	rsat = (eps*es)/(p-es);
+	r = (epsi*e)/(p-e);
+	rsat = (epsi*es)/(p-es);
 	#ri = r - rsat; #liquid water content of air (Zhang et al 1990)
-	k = 0.2854 * (1 - 0.28*r);
+	k = 0.2854f0 * (1 - 0.28f0*r);
 	# change units from g/g to g/kg
-	rg = r*1e3; rsat = rsat*1e3;
+	rg = r*1f3; rsat = rsat*1f3;
 
 	# calculate pseudo-equivalent potential temperature, from Bolton, Mon Wea Rev, 1980
 	# r = is g/kg
 	# Firstly calculate Temp at LCL, note e must be in mb.
-	tk_lcl = ( 2840 / (3.5 * log(tk) - log(e/100) - 4.805) ) + 55;               # eqn 21, Bolton
-	thetae = theta*exp(( (3.376/tk_lcl) - 0.00254)*rg*(1+0.81 * rg *1e-3));   # eqn 38, Bolton
-	thetaes = theta*exp(( (3.376/tk_lcl) - 0.00254)*rsat*(1+0.81 * rg *1e-3));   # eqn 38, Bolton
+	tk_lcl = ( 2840 / (3.5f0 * log(tk) - log(e/100) - 4.805f0) ) + 55;               # eqn 21, Bolton
+	thetae = theta*exp(( (3.376f0/tk_lcl) - 0.00254f0)*rg*(1+0.81f0 * rg *1f-3));   # eqn 38, Bolton
+	thetaes = theta*exp(( (3.376f0/tk_lcl) - 0.00254f0)*rsat*(1+0.81f0 * rg *1f-3));   # eqn 38, Bolton
 
 	#LCL height using Poisson's equation
-	p_lcl =  0.01*p.*((tk_lcl./tk).^(1.0/k));
+	p_lcl =  0.01f0*p.*((tk_lcl./tk).^(1.0f0/k));
 
 	return theta, thetae, thetaes, p_lcl, tk_lcl, r 
 
@@ -209,21 +205,18 @@ function thermo_rh(tk::Vector{F},p::Vector{F},rh::Vector{F}) where F<:AbstractFl
 	# Changed to used formulae of Bolton (1980), for pseudo-equivalent p.t.
 
 	#convert t,p to SI units
-	p = p.*100; #Pa
+	p = p.*100f0; #Pa
 
-	local p0 = 1000*100;	#reference pressure in Pa
-	local R = 287;		#gas constant
-	local cp = 1004;	#specific heat wrt pressure
-	local K = R./cp;
-	local eps = 0.62198;
+	local p0 = 100000f0;	#reference pressure in Pa
+	local R = 287f0;		#gas constant
+	local K = R./1004f0;
+	local epsi = 0.62198f0;
 
     local len = length(tk)
     if (len != length(p))
 		error("All vectors must be of same length")
     end
 		
-
-	
     theta = Vector{F}(undef,len)
     thetae = Vector{F}(undef,len)
 	thetaes = Vector{F}(undef,len)
@@ -239,23 +232,23 @@ function thermo_rh(tk::Vector{F},p::Vector{F},rh::Vector{F}) where F<:AbstractFl
 		e = (rh[i]/100)*es;   # vapour pressure (Pa)
 		
 		# Calculate water vapour mixing ratio r and q specific humidity
-		r[i] = (eps*e)./(p[i]-e);
-		rsat[i] = (eps*es)./(p[i]-es);
+		r[i] = (epsi*e)./(p[i]-e);
+		rsat[i] = (epsi*es)./(p[i]-es);
 
 		#ri = r[i] - rsat[i]; #liquid water content of air 
-		k = 0.2854 * (1 - 0.28*r[i]);
+		k = 0.2854f0 * (1 - 0.28f0*r[i]);
 		# change units from g/g to g/kg
-		rg = r[i]*1e3; rsatg = rsat[i]*1e3;
+		rg = r[i]*1000; rsatg = rsat[i]*1000;
 
 		# calculate pseudo-equivalent potential temperature, from Bolton, Mon Wea Rev, 1980
 		# r = is g/kg
 		# Firstly calculate Temp at LCL, note e must be in mb.
-		tk_lcl[i] = ( 2840 / (3.5 * log(tk[i]) - log(e/100) - 4.805) ) + 55;               # eqn 21, Bolton
-		thetae[i] = theta[i] *  exp(( (3.376/tk_lcl[i]) - 0.00254) * rg * (1+0.81 *rg *1e-3));   # eqn 38, Bolton
-		thetaes[i] = theta[i] * exp(( (3.376/tk_lcl[i]) - 0.00254) * rsatg * (1+0.81 *rg *1e-3));   # eqn 38, Bolton
+		tk_lcl[i] = ( 2840f0 / (3.5f0 * log(tk[i]) - log(e/100f0) - 4.805f0) ) + 55f0;               # eqn 21, Bolton
+		thetae[i] = theta[i] *  exp(( (3.376f0/tk_lcl[i]) - 0.00254f0) * rg * (1+0.81f0 *rg *0.001f0));   # eqn 38, Bolton
+		thetaes[i] = theta[i] * exp(( (3.376f0/tk_lcl[i]) - 0.00254f0) * rsatg * (1+0.81f0 *rg *0.001f0));   # eqn 38, Bolton
 
 		#LCL height using Poisson's equation
-		p_lcl[i] =  0.01*p[i]*((tk_lcl[i]/tk[i])^(1/k));
+		p_lcl[i] =  0.01f0*p[i]*((tk_lcl[i]/tk[i])^(1/k));
 
     end
 
@@ -334,6 +327,8 @@ Calculate convective indices such as **CAPE** and **CIN** for a parcel of choice
 ```jldoctest 
 julia> LI,CAPE,CIN = calc_CAPE_theta(ps,tks,qs,zs,sp, parcel = 2, dp_mix = 100, kiss= 1)
 (-27.416924139871526, 4428.182537242374, 137.85516940477973)
+julia> LI, CAPE, CIN, pLCL, zBCL, CAPECIN_ALCL, CIN_LCL, MRH_ALCL, MRH1, MRH2 = calc_CAPE_thetae(ps,tks,qs,zs)
+(-1.6502346944216129, 120.80558885439602, 23.64198824254466, 787.8515322945883, 351.837890625, -23.998722156796717, 0, 63.845851443325564, 76.3582759152618, 56.28591549989976)
 ```
 
 **OUTPUT** by default, following Float32 values are returned (kiss=0): \n
@@ -369,16 +364,18 @@ function calc_CAPE_thetae(ps::Vector{F},tks::Vector{F},qs::Vector{F},zs::Vector{
 	
 	rhs = q_to_rh.(tks,ps,qs)
 	
-	pres = collect(100:dp:sp)
+	pres = collect(ceil(ps[1]):dp:floor(sp))
 	nlevs = size(pres,1)
 
 	# Interpolation: use "Interpolations" package for linear interpolation on a non-uniform grid
 	knots = (ps,);
 
-
-	itp = interpolate(knots,tks,Gridded(Linear())); tk_env = itp(pres)
-	itp = interpolate(knots,rhs,Gridded(Linear())); rh_env = itp(pres)
-	itp = interpolate(knots,zs,Gridded(Linear())); z_env = itp(pres)
+	itp = interpolate(knots,tks,Gridded(Linear())) 
+	tk_env = itp(pres)
+	itp = interpolate(knots,rhs,Gridded(Linear()))
+	rh_env = itp(pres)
+	itp = interpolate(knots,zs,Gridded(Linear()))
+	z_env = itp(pres)
 
 	theta,thetae,thetaes = thermo_rh(tks,ps,rhs)
 	
@@ -484,7 +481,7 @@ function calc_CAPE_thetae(ps::Vector{F},tks::Vector{F},qs::Vector{F},zs::Vector{
 	
 	zBCL = calc_BCL(qs,rhs,zs)
 	
-	return LI,CAPE,CAPECIN_ALCL,MRH_ALCL,CIN_LCL,MRH1,MRH2,pLCL,zBCL,CIN
+	return LI, CAPE, CIN, pLCL, zBCL, CAPECIN_ALCL, CIN_LCL, MRH_ALCL, MRH1, MRH2
 
 end
 
@@ -508,7 +505,7 @@ function calc_BCL(qs,rhs,zs)
 		qmix[i] = mean(qs[i:N])
 	end
 	
-	z = collect(zs[1]:-10:zs[end]) 
+	z = vcat( collect(10000:-300:6100), collect(6000:-100:3000), collect(3000:-20:zs[end]) )
 
 	knots = (reverse(zs,1),);
 
