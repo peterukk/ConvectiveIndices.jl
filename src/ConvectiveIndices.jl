@@ -10,6 +10,7 @@ export r_to_rh
 export q_to_rh
 export dewpoint_to_q
 export calc_CAPE_thetae
+export calc_BCL
 
 using Interpolations
 using LinearAlgebra
@@ -326,7 +327,7 @@ end
 """
 	calc_CAPE_thetae (ps[hPa], tks[K], qs[kg/kg], zs[m], parcel, dp_mix[hPa], dp[hPa], kiss) 
 
-Calculate convective predictors such as **CAPE** and **CIN** for a parcel of choice (surface/most unstable, with/without vertical mixing).
+Calculate convective indices such as **CAPE** and **CIN** for a parcel of choice (surface/most unstable, with/without vertical mixing).
 
 # Examples
 
@@ -389,7 +390,7 @@ function calc_CAPE_thetae(ps::Vector{F},tks::Vector{F},qs::Vector{F},zs::Vector{
 	# FIND PARCEL
 	if parcel == 1 #	--> MOST UNSTABLE
 		# Find level with the highest theta-e in the lowest 350 hPa
-		thetae_env[pres.<(sp - 350)] = 0; # Set elements above the lowest 350 hPa to 0
+		thetae_env[pres.<(sp - 350)] .= 0.0; # Set elements above the lowest 350 hPa to 0
 		thetae_max,iPL = findmax(thetae_env); #Index of parcel level
 	else #				--> SURFACE PARCEL
 		iPL = nlevs # 
@@ -419,24 +420,26 @@ function calc_CAPE_thetae(ps::Vector{F},tks::Vector{F},qs::Vector{F},zs::Vector{
 	_,thetae_parc,_,pLCL = thermo_rh(tk0,p0,rh0)
 
 	# LIFTED INDEX
-	i500 = findmin(abs.(pres - 500))[2]
+	i500 = findmin(abs.(pres .- 500))[2]
 	LI = thetaes_env[i500] - thetae_parc
 
 	# CAPE AND CIN
 	#the quantity being integrated in theta-e formulation for CAPE
-	tdiff = (thetae_parc - thetaes_env)./thetaes_env
+	tdiff = (thetae_parc .- thetaes_env)./thetaes_env
 	tdiff_cape = copy(tdiff)
 	#Only positive regions in sounding contribute to CAPE
-	tdiff_cape[tdiff_cape.<0] = 0
-
+	tdiff_cape[tdiff_cape.<0] .= 0
 
 	iLCL = findlast(pres.<pLCL)
 	iLFC = findlast(tdiff[1:iLCL].>0)
 	iEL = findfirst(tdiff.>0)
 
-	CAPE = 0
-	CIN = NaN
-	if iLFC>0
+
+	if iLFC == nothing
+		CAPE = 0
+		CIN = NaN
+		iLFC = NaN
+	else
 		if (iLFC == iEL)
 			iEL=iEL-1;
 		end
@@ -459,14 +462,15 @@ function calc_CAPE_thetae(ps::Vector{F},tks::Vector{F},qs::Vector{F},zs::Vector{
 		CAPECIN_ALCL = -g*trapz(z_env[1:iLCL],tdiff[1:iLCL])
 	end
 
-	CIN_LCL = NaN
 	if iLCL < iPL
 		CIN_LCL = g*trapz(z_env[iLCL:iPL],tdiff[iLCL:iPL])
+	else
+		CIN_LCL = 0
 	end
 
-	i300 = findmin(abs.(pres - 300))[2]
-	i600 = findmin(abs.(pres - 600))[2]
-	i800 = findmin(abs.(pres - 800))[2]
+	i300 = findmin(abs.(pres .- 300))[2]
+	i600 = findmin(abs.(pres .- 600))[2]
+	i800 = findmin(abs.(pres .- 800))[2]
 
 	# MEAN RELATIVE HUMIDITIES 
 	MRH1 =  mean(rh_env[i600:i800])
@@ -495,22 +499,23 @@ A process-based framework for quantifying the atmospheric preconditioning of sur
 """
 function calc_BCL(qs,rhs,zs)
 
-	qsats = 100.0/rhs .* qs;
-	qm = repeat(qs,1,length(qs))
-	tril!(qm);  # zeros above diagonal (upper right corner)
-	qm[qm.==0] = NaN; #replace with NaNs
+	qsats = 100.0./rhs .* qs
 
-	#This will be unnecessary in Julia 1.0
-	nanmean(x) = mean(filter(!isnan,x))
-	nanmean(x,y) = mapslices(nanmean,x,y)
-	#Calculate mixed-layer means for different depths: qm(i) = mean(qm_sfc,..qmi-1,qmi)
-	qmix = nanmean(qm,1)[:]
+	N = length(qs)
+	qmix = typeof(qs)(undef,N)
+
+	for i = 1:N
+		qmix[i] = mean(qs[i:N])
+	end
 	
 	z = collect(zs[1]:-10:zs[end]) 
 
 	knots = (reverse(zs,1),);
-	itp = interpolate(knots,reverse(qmix,1),Gridded(Linear())); qmix_int = itp[z]
-	itp = interpolate(knots,reverse(qsats,1),Gridded(Linear())); qsat_int = itp[z]
+
+	itp = interpolate(knots,reverse(qmix,1),Gridded(Linear())) 
+	qmix_int = itp(z)
+	itp = interpolate(knots,reverse(qsats,1),Gridded(Linear())) 
+	qsat_int = itp(z)
 	iBCL = findlast(qmix_int.>qsat_int)
 	
 	zBCL = z[iBCL]
