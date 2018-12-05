@@ -19,7 +19,6 @@ using Statistics
 """
 numerical integration of y (Vector) with respect to the coordinates specified by x using the trapezoidal rule
 """
-
 function trapz(x::Vector{R}, y::Vector{R}) where R<:Real
 
 	len = length(y)
@@ -32,6 +31,23 @@ function trapz(x::Vector{R}, y::Vector{R}) where R<:Real
     end
 	r/R(2.0)
 	
+end
+
+"""
+Find the element in an array closest to a value, return the index and difference
+"""
+function mindist(x, val)
+	# using enumerate to avoid indexing
+	min_i = 0
+	min_x = Inf
+	for (i, xi) in enumerate(x)
+		dist = abs(xi - val)
+		if dist < min_x
+			min_x = dist
+			min_i = i
+		end
+	end
+	return (min_i, min_x)
 end
 
 
@@ -72,10 +88,8 @@ virtualtemp( tk, r )
 Return virtual temperature given temperature in K and mixing ratio in g/g
 """
 function virtualtemp(tk::Real, r::Real)
-
 	gc_ratio =  287.04/461.5;#epsilon=Rd/Rv, where Rd=gas const. for dry air and Rv=gas const. for water vap.
 	tk_v = tk.*(1.0+r/gc_ratio)./(1.0+r); #tk*(1 + 0.608*r);
-
 end
 
 """
@@ -113,22 +127,6 @@ function q_to_rh(tk::Real, p::Real, q::Real)
 end
 
 """
-q_to_rh( tk, p, r )
-Return 1D array of relative humidity [%] given 1D arrays of temperature [K], pressure [hPa] and specific humidity 
-"""
-function q_to_rh(tk::Vector{F}, p::Vector{F}, q::Vector{F}) where F<:AbstractFloat
-	N = length(tk)
-	RH = Vector{F}(undef,N)
-	c = F(18.0152)/F(28.9644);
-	for i = 1:N
-		es = saturation_vapor_pressure_liquid(tk[i])
-		e = (q[i]*p[i]*F(100)) /(c + (1 - c)*q[i]);
-		RH[i] = 100 * e/es;
-	end
-	return RH
-end
-
-"""
 dewpoint_to_q( tk, p, td )
 Return specific humidity [kg/kg] given temperature [K], pressure [hPa] and dewpoint temperature [K]
 """
@@ -161,9 +159,9 @@ function thermo_rh(tk::Real,p::Real,rh::Real)
 
 	a = ((p/p0)^(-K));
 	theta = tk*a;
+
 	es = saturation_vapor_pressure_liquid(tk); # Saturation vapor pressure
 	e = ((rh/100)*es);                              # vapour pressure (Pa)
-
 
 	# Calculate water vapour mixing ratio r and q specific humidity
 	r = (epsi*e)/(p-e);
@@ -208,13 +206,13 @@ function thermo_rh(tk::Vector{F},p::Vector{F},rh::Vector{F}) where F<:AbstractFl
 		error("All vectors must be of same length")
     end
 		
-    theta = Vector{F}(undef,len)
-    thetae = Vector{F}(undef,len)
-	thetaes = Vector{F}(undef,len)
-	p_lcl = Vector{F}(undef,len)
-	tk_lcl = Vector{F}(undef,len)
-	r = Vector{F}(undef,len)
-	rsat = Vector{F}(undef,len)
+    theta = zero(tk)
+    thetae = zero(tk)
+	thetaes = zero(tk)
+	p_lcl = zero(tk)
+	tk_lcl = zero(tk)
+	r = zero(tk)
+	rsat = zero(tk)
 
 	@inbounds for i in 1:len
 		#p[i] = 100*p[i]  # convert t,p to SI units
@@ -295,7 +293,7 @@ function calc_CAPE_thetae(ps::Vector{F},tks::Vector{F},qs::Vector{F},zs::Vector{
 
 	sp = ps[end]
 	
-	rhs = q_to_rh(tks,ps,qs)
+	rhs = q_to_rh.(tks,ps,qs)
 	
 	pres = collect(ceil(ps[1]):dp:floor(sp))
 	nlevs = size(pres,1)
@@ -310,14 +308,15 @@ function calc_CAPE_thetae(ps::Vector{F},tks::Vector{F},qs::Vector{F},zs::Vector{
 	itp = interpolate(knots,zs,Gridded(Linear()))
 	z_env = itp(pres)
 
-	theta,thetae,thetaes = thermo_rh(tks,100*ps,rhs)	
+	theta,thetae,thetaes = thermo_rh(tks,100*ps,rhs)
+
 	itp = interpolate(knots,thetae,Gridded(Linear())); thetae_env = itp(pres)
 	itp = interpolate(knots,thetaes,Gridded(Linear())); thetaes_env = itp(pres)
 
 	# FIND PARCEL
 	if parcel == 1 #	--> MOST UNSTABLE
 		# Find level with the highest theta-e in the lowest 350 hPa
-		thetae_env[pres.<(sp - 350)] .= 0.0; # Set elements above the lowest 350 hPa to 0
+		thetae_env[pres.<(sp - 350)] .= 0; # Set elements above the lowest 350 hPa to 0
 		thetae_max,iPL = findmax(thetae_env); #Index of parcel level
 	else #				--> SURFACE PARCEL
 		iPL = nlevs # 
@@ -347,8 +346,8 @@ function calc_CAPE_thetae(ps::Vector{F},tks::Vector{F},qs::Vector{F},zs::Vector{
 	_,thetae_parc,_,pLCL = thermo_rh(tk0,100*p0,rh0)
 
 	# LIFTED INDEX
-	i500 = findmin(abs.(pres .- 500))[2]
-	LI = thetaes_env[i500] - thetae_parc
+	i500 = mindist(pres,500)[1]
+	LI = thetaes_env[i500] - thetae_parc # T (around 500 hPa ) - T (parcel lifted to 500 hPa)
 
 	# CAPE AND CIN
 	#the quantity being integrated in theta-e formulation for CAPE
@@ -379,7 +378,7 @@ function calc_CAPE_thetae(ps::Vector{F},tks::Vector{F},qs::Vector{F},zs::Vector{
 	end
 	
 	# CAPE and RH in the 250-hPa depth layer ABOVE LCL	
-	idp_250 = floor(Int,250/dp)
+	idp_250 = div(250,dp)
 	if iLCL-idp_250 > 0
 		MRH_ALCL = @views mean(rh_env[iLCL-idp_250:iLCL])
 		CAPECIN_ALCL = -g*trapz(z_env[iLCL-idp_250:iLCL],tdiff[iLCL-idp_250:iLCL])
@@ -394,9 +393,9 @@ function calc_CAPE_thetae(ps::Vector{F},tks::Vector{F},qs::Vector{F},zs::Vector{
 		CIN_LCL = F(0)
 	end
 
-	i300 = findmin(abs.(pres .- 300))[2]
-	i600 = findmin(abs.(pres .- 600))[2]
-	i800 = findmin(abs.(pres .- 800))[2]
+	i300 = mindist(pres,300)[1]
+	i600 = mindist(pres,600)[1]
+	i800 = mindist(pres,800)[1]
 
 	# MEAN RELATIVE HUMIDITIES 
 	MRH1 =  @views mean(rh_env[i600:i800])
@@ -436,7 +435,7 @@ function calc_BCL(qs::Vector{F},rhs::Vector{F},zs::Vector{F}) where F<:AbstractF
 		qmix[i] = @views mean(qs[i:N])
 	end
 	
-	z = vcat( collect(10000:-300:6100), collect(6000:-100:3000), collect(3000:-20:zs[end]) )
+	z = vcat( collect(10000:-300:6100), collect(6000:-100:3000), collect(3000:-30:zs[end]) )
 
 	knots = (reverse(zs,1),);
 
