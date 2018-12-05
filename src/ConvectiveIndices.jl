@@ -50,7 +50,6 @@ function mindist(x, val)
 	return (min_i, min_x)
 end
 
-
 """
 saturation_vapor_pressure_liquid(T)
 Calculate the saturation vapor pressure temperature [K] according to a formula presented in:
