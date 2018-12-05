@@ -1,8 +1,52 @@
 # ConvectiveIndices.jl
 Julia package for calculating convective indices (e.g. CAPE) from atmospheric sounding data.
 
+The package includes functions for thermodynamic conversions, etc, but the core function is calc_CAPE_thetae, which calculates parameters such as CAPE, Lifted Index and CIN, given columns of pressure, temperature, specific humidity and geometric height.
 
-Processing 6.2 million pseudosoundings on an 8-core CPU:
+```
+help?> calc_CAPE_thetae
+search: calc_CAPE_thetae
+
+
+  Calculate convective indices such as CAPE and CIN for a parcel of choice (surface/most unstable, with/without vertical mixing).
+
+  Examples
+  ≡≡≡≡≡≡≡≡≡≡
+
+  julia> LI,CAPE,CIN = calc_CAPE_theta(ps,tks,qs,zs,sp, parcel = 2, dp_mix = 100, kiss= 1)
+  (-27.416924139871526, 4428.182537242374, 137.85516940477973)
+  julia> LI, CAPE, CIN, pLCL, zBCL, CAPECIN_ALCL, CIN_LCL, MRH_ALCL, MRH1, MRH2 = calc_CAPE_thetae(ps,tks,qs,zs)
+  (-1.6502346944216129, 120.80558885439602, 23.64198824254466, 787.8515322945883, 351.837890625, -23.998722156796717, 0, 63.845851443325564, 76.3582759152618, 56.28591549989976)
+
+
+  OUTPUT by default, following Float32 values are returned (kiss=0):
+
+  Lifted Index [°C], CAPE [J/kg], CAPE-CIN above the LCL [J/kg], MRH (mean RH%) above the LCL [%], CIN below LCL [J/kg], MRH 600-800 hPa, MRH 300-600 HP, LCL [hPa], CIN [J/kg]
+
+  Toggle kiss=1 to only return CAPE, Lifted Index and CIN.
+
+  INPUT: (N-element ARRAYs) ps,tks,qs,zs = vertical profiles of pressure, temperature, specific humidity and geopotential height
+
+  OPTIONAL keyword arguments:
+
+  parcel = 1 : the most unstable parcel in the lowest 350 hPa (default)
+
+  parcel = 2 : surface parcel
+
+  dp_mix = 0...100 : pressure layer depth [hPa] for mixing the source parcel (default 50, use 0 for no mixing)
+
+  kiss = 1: keep it simple, stupid - output only CAPE, LI, and CIN (default 0).
+
+  This routine uses a THETA-E formulation for all indices (similarly to ECMWF CAPE), thereby skipping explicit parcel computations. This results in different values (e.g. for CAPE, 30% larger) than
+  classic computations, but in no worse correlation with observed convection [1].
+
+  TIP: Use parcel=1 and dp_mix=50 for a hybrid mixed-layer most-unstable parcel similar to the one used by ECMWF. The MLMU-Lifted Index was the best overall thunderstorm predictor in Europe in [1].
+
+  [1] Ukkonen et al. (2018)
+```
+
+
+Processing 6.2 million reanalysis pseudosoundings on an 8-core CPU:
 ```
 @time @sync @distributed for i = 1:nlon
                for j = 1:nlat
