@@ -42,7 +42,7 @@ search: calc_CAPE_thetae
 
   TIP: Use parcel=1 and dp_mix=50 for a hybrid mixed-layer most-unstable parcel similar to the one used by ECMWF. The MLMU-Lifted Index was the best overall thunderstorm predictor in Europe in [1].
 
-  [1] Ukkonen et al. (2018)
+  [1] Ukkonen and Mäkelä (2018): Evaluation of machine learning classifiers for predicting deep convection, JAMES.
 ```
 
 The code is computationally efficient yet simple and easy to modify thanks to Julias language design. 
