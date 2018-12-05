@@ -3,7 +3,7 @@ Julia package for calculating convective indices (e.g. CAPE) from atmospheric so
 
 
 Processing 6.2 million pseudosoundings on an 8-core CPU:
-
+```
 @time @sync @distributed for i = 1:nlon
                for j = 1:nlat
                        for k = 1:ntime
@@ -13,3 +13,4 @@ Processing 6.2 million pseudosoundings on an 8-core CPU:
                end
        end
 208.778669 seconds (3.02 M allocations: 148.865 MiB, 0.03% gc time)
+```
