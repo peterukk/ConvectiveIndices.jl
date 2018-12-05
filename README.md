@@ -37,7 +37,7 @@ search: calc_CAPE_thetae
 
   kiss = 0 by default.
 
-  This routine uses a THETA-E formulation for all indices (similar to how CAPE is calculated by ECMWFs IFS model), thereby skipping explicit parcel computations. This results in different values (e.g. for CAPE, 30% larger) than
+  This routine uses a THETA-E formulation for all indices (similarly to how CAPE is calculated in ECMWFs IFS model), thereby skipping explicit parcel computations. This results in different values (for CAPE, roughly 30% larger) than
   classic computations, but in no worse correlation with observed convection [1].
 
   TIP: Use parcel=1 and dp_mix=50 for a hybrid mixed-layer most-unstable parcel similar to the one used by ECMWF. The MLMU-Lifted Index was the best overall thunderstorm predictor in Europe in [1].
@@ -47,6 +47,7 @@ search: calc_CAPE_thetae
 
 The code is computationally efficient yet simple and easy to modify thanks to Julias language design. 
 Processing 6.2 million reanalysis pseudosoundings on an 8-core CPU:
+
 ```
 @time @sync @distributed for i = 1:nlon
                for j = 1:nlat
