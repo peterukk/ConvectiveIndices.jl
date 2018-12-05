@@ -19,11 +19,11 @@ search: calc_CAPE_thetae
   (-1.6502346944216129, 120.80558885439602, 23.64198824254466, 787.8515322945883, 351.837890625, -23.998722156796717, 0, 63.845851443325564, 76.3582759152618, 56.28591549989976)
 
 
-  OUTPUT by default, following Float32 values are returned (kiss=0):
+  OUTPUT: by default, following Float32 values are returned (kiss=0):
 
   Lifted Index [°C], CAPE [J/kg], CAPE-CIN above the LCL [J/kg], MRH (mean RH%) above the LCL [%], CIN below LCL [J/kg], MRH 600-800 hPa, MRH 300-600 HP, LCL [hPa], CIN [J/kg]
 
-  Toggle kiss=1 to only return CAPE, Lifted Index and CIN.
+  Toggle kiss=1 (Keep It Simple, Stupid) to only return CAPE, Lifted Index and CIN.
 
   INPUT: (N-element ARRAYs) ps,tks,qs,zs = vertical profiles of pressure, temperature, specific humidity and geopotential height
 
@@ -35,9 +35,9 @@ search: calc_CAPE_thetae
 
   dp_mix = 0...100 : pressure layer depth [hPa] for mixing the source parcel (default 50, use 0 for no mixing)
 
-  kiss = 1: keep it simple, stupid - output only CAPE, LI, and CIN (default 0).
+  kiss = 0 by default.
 
-  This routine uses a THETA-E formulation for all indices (similarly to ECMWF CAPE), thereby skipping explicit parcel computations. This results in different values (e.g. for CAPE, 30% larger) than
+  This routine uses a THETA-E formulation for all indices (similar to how CAPE is calculated by ECMWFs IFS model), thereby skipping explicit parcel computations. This results in different values (e.g. for CAPE, 30% larger) than
   classic computations, but in no worse correlation with observed convection [1].
 
   TIP: Use parcel=1 and dp_mix=50 for a hybrid mixed-layer most-unstable parcel similar to the one used by ECMWF. The MLMU-Lifted Index was the best overall thunderstorm predictor in Europe in [1].
@@ -45,7 +45,7 @@ search: calc_CAPE_thetae
   [1] Ukkonen et al. (2018)
 ```
 
-
+The code is computationally efficient yet simple and easy to modify thanks to Julias language design. 
 Processing 6.2 million reanalysis pseudosoundings on an 8-core CPU:
 ```
 @time @sync @distributed for i = 1:nlon
