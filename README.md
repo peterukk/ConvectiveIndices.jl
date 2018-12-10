@@ -1,7 +1,7 @@
 # ConvectiveIndices.jl
 Julia package for calculating convective indices (e.g. CAPE) from atmospheric sounding data.
 
-The package includes functions for thermodynamic conversions, etc, but the core function is calc_CAPE_thetae, which calculates parameters such as CAPE, Lifted Index and CIN, given columns of pressure, temperature, specific humidity and geometric height.
+The package includes functions for computing thermodynamic properties of moist air, but the core function is calc_CAPE_thetae, which outputs parameters such as CAPE, Lifted Index and CIN from input columns of pressure, temperature, specific humidity and geometric height.
 
 ```
 help?> calc_CAPE_thetae
@@ -13,7 +13,7 @@ search: calc_CAPE_thetae
   Examples
   ≡≡≡≡≡≡≡≡≡≡
 
-  julia> LI,CAPE,CIN = calc_CAPE_theta(ps,tks,qs,zs,sp, parcel = 2, dp_mix = 100, kiss= 1)
+  julia> LI,CAPE,CIN = calc_CAPE_theta(ps,tks,qs,zs,sp, parcel = 2, dp_mix = 100, kiss = 1)
   (-27.416924139871526, 4428.182537242374, 137.85516940477973)
   julia> LI, CAPE, CIN, pLCL, zBCL, CAPECIN_ALCL, CIN_LCL, MRH_ALCL, MRH1, MRH2 = calc_CAPE_thetae(ps,tks,qs,zs)
   (-1.6502346944216129, 120.80558885439602, 23.64198824254466, 787.8515322945883, 351.837890625, -23.998722156796717, 0, 63.845851443325564, 76.3582759152618, 56.28591549989976)
@@ -25,17 +25,18 @@ search: calc_CAPE_thetae
 
   Toggle kiss=1 (Keep It Simple, Stupid) to only return CAPE, Lifted Index and CIN.
 
-  INPUT: (N-element ARRAYs) ps,tks,qs,zs = vertical profiles of pressure, temperature, specific humidity and geopotential height
+  INPUT: (N-element ARRAYs) ps,tks,qs,zs = vertical profiles of pressure [hPa], temperature [K], specific humidity [kg/kg] and geopotential height [m].
 
   OPTIONAL keyword arguments:
 
   parcel = 1 : the most unstable parcel in the lowest 350 hPa (default)
 
-  parcel = 2 : surface parcel
+         = 2 : surface parcel
 
   dp_mix = 0...100 : pressure layer depth [hPa] for mixing the source parcel (default 50, use 0 for no mixing)
 
-  kiss = 0 by default.
+  kiss = 0 : full outputs
+       = 1 : only CAPE, LI and CIN.
 
   This routine uses a THETA-E formulation for all indices (similarly to how CAPE is calculated in ECMWFs IFS model), thereby skipping explicit parcel computations. This results in different values (for CAPE, roughly 30% larger) than
   classic computations, but in no worse correlation with observed convection [1].
