@@ -1,7 +1,7 @@
 # ConvectiveIndices.jl
 Julia package for calculating convective indices (e.g. CAPE) from atmospheric sounding data.
 
-The package includes functions for computing thermodynamic properties of moist air, but the core function is calc_CAPE_thetae, which outputs parameters such as CAPE, Lifted Index and CIN from input columns of pressure, temperature, specific humidity and geometric height.
+The core function is ```calc_CAPE_thetae```, which outputs parameters such as CAPE, Lifted Index and CIN from input columns of pressure, temperature, specific humidity and geometric height.
 
 ```
 help?> calc_CAPE_thetae
