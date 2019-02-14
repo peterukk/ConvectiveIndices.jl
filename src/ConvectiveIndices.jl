@@ -326,7 +326,7 @@ end
 """
 	calc_CAPE_thetae (ps[hPa], tks[K], qs[kg/kg], zs[m], parcel, dp_mix[hPa], dp[hPa], kiss) 
 
-Calculate convective predictors such as **CAPE** and **CIN** for a parcel of choice (surface/most unstable, with/without vertical mixing).
+Calculate convective indices such as **CAPE** and **CIN** for a parcel of choice (surface/most unstable, with/without vertical mixing).
 
 # Examples
 
@@ -366,6 +366,7 @@ function calc_CAPE_thetae(ps::Vector{F},tks::Vector{F},qs::Vector{F},zs::Vector{
 
 	sp = ps[end]
 	
+
 	rhs = q_to_rh.(tks,ps,qs)
 	
 	pres = collect(100:dp:sp)
