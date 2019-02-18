@@ -11,6 +11,7 @@ export q_to_rh
 export dewpoint_to_q
 export calc_CAPE_thetae
 export calc_BCL
+export calc_entropy
 
 using Interpolations
 using LinearAlgebra
@@ -57,21 +58,19 @@ D. M. MURPHY and T. KOOP: Review of the vapour pressures of ice and supercooled 
 Q. J. R. Meteorol. Soc. (2005), 131, pp. 1539-1565
 """
 function saturation_vapor_pressure_liquid(T::Real)
-
-	if T < 123 || T > 332   
-		@warn "Temperature out of range [123-332] K."
-    end
-
+	#if T < 123 || T > 332   
+	#	@warn "Temperature out of range [123-332] K."
+    #end
     temp = (54.842763f0 - (6763.22f0 / T) - 4.210f0  * log(T) + 0.000367f0  * T) + (tanh( 0.0415f0  * (T - 218.8f0 ) )*(53.878f0  - (1331.22f0 /T) - 9.44523f0 *log(T) + 0.014025f0  * T))
-    es = exp(temp);
-
+	
+	es = exp(temp);
 end
 
 function saturation_vapor_pressure_liquid(T::Vector{R}) where R<:Real
 
-    if ~(all(123 .< T) && all(T .< 332)) 
-		@warn "Temperature out of range [123-332] K."
-	end
+    #if ~(all(123 .< T) && all(T .< 332)) 
+	#	@warn "Temperature out of range [123-332] K."
+	#end
 	
 	N = length(T)
 	es = Vector{R}(undef,N)
@@ -80,6 +79,7 @@ function saturation_vapor_pressure_liquid(T::Vector{R}) where R<:Real
     	es[i] = exp((54.842763f0 - (6763.22f0 / T[i]) - 4.210f0 * log(T[i]) + 0.000367f0  * T[i]) + (tanh( 0.0415f0 * (T[i] - 218.8f0 ) )*(53.878f0 - (1331.22f0 /T[i]) - 9.44523f0 *log(T[i]) + 0.014025f0 * T[i])))
 	end
 end
+
 
 
 """
@@ -229,8 +229,6 @@ function thermo_rh(tk::Vector{F},p::Vector{F},rh::Vector{F}) where F<:AbstractFl
 		rsat = (epsi*es)/(p[i]-es)
 
 		#ri = r[i] - rsat[i]; #liquid water content of air 	
-		# change units from g/g to g/kg
-		#rg = r[i]*1000; rsatg = rsat[i]*1000;
 
 		# calculate pseudo-equivalent potential temperature, from Bolton, Mon Wea Rev, 1980
 		# r = is g/kg
@@ -258,15 +256,16 @@ Calculate convective indices such as **CAPE** and **CIN** for a parcel of choice
 # Examples
 
 ```jldoctest 
-julia> LI,CAPE,CIN = calc_CAPE_theta(ps,tks,qs,zs,parcel = 2, dp_mix = 100, kiss= 1)
+julia> LI, CAPE, CIN = calc_CAPE_theta(ps,tks,qs,zs,parcel = 2, dp_mix = 100, kiss= 1)
 (-27.416924139871526, 4428.182537242374, 137.85516940477973)
 julia> LI, CAPE, CIN, pLCL, zBCL, CAPECIN_ALCL, CIN_LCL, MRH_ALCL, MRH1, MRH2 = calc_CAPE_thetae(ps,tks,qs,zs)
 (-1.6502346944216129, 120.80558885439602, 23.64198824254466, 787.8515322945883, 351.837890625, -23.998722156796717, 0, 63.845851443325564, 76.3582759152618, 56.28591549989976)
 ```
 
 **OUTPUT** by default, following Float32 values are returned (kiss=0): \n
-Lifted Index [°C], CAPE [J/kg], CAPE-CIN above the LCL [J/kg], MRH (mean RH%) above the LCL [%], CIN below LCL [J/kg], MRH 600-800 hPa, MRH 300-600 HP, LCL [hPa], CIN [J/kg] \n
-Toggle kiss=1 to only return CAPE, Lifted Index and CIN. \n
+Lifted Index [°C], CAPE [J/kg], CIN [J/kg], pLCL [hPa], z_BCL [m], CAPE-CIN above the LCL [J/kg], CIN below LCL [J/kg], MRH (mean RH%) above the LCL [%], MRH 600-800 hPa, MRH 300-600 hPa \n
+
+Toggle kiss=1 to only return Lifted Index, CAPE and CIN. \n
 
 **INPUT**:
 (N-element ARRAYs) **ps**,**tks**,**qs**,**zs** = vertical profiles of pressure, temperature, specific humidity and geopotential height \n
@@ -277,12 +276,12 @@ OPTIONAL keyword arguments: \n
 `kiss = 1`: keep it simple, stupid - output only CAPE, LI, and CIN (default 0). \n
 
 This routine uses a THETA-E formulation for all indices (similarly to ECMWF CAPE), thereby skipping explicit parcel computations. 
-This results in different values (e.g. for CAPE, 30% larger) than classic computations, but in no worse correlation with observed convection [1].
+This results in larger absolute values (e.g. for CAPE, 30% larger) than classic computations, but in no worse correlation with observed convection [1].
 
 TIP: Use `parcel=1` and `dp_mix=50` for a hybrid mixed-layer most-unstable parcel similar to the one used by ECMWF. The MLMU-Lifted Index was the overall
 thunderstorm predictor in Europe in [1].
 
-[1] Ukkonen et al. (2018)
+[1] Ukkonen and Mäkelä (2019): Evaluation of machine learning classifiers for predicting deep convection
 """
 function calc_CAPE_thetae(ps::Vector{F},tks::Vector{F},qs::Vector{F},zs::Vector{F}; parcel::Integer=1,dp_mix::Real=50,dp::Real=5,kiss::Integer=0) where F<:AbstractFloat
 
@@ -414,6 +413,61 @@ function calc_CAPE_thetae(ps::Vector{F},tks::Vector{F},qs::Vector{F},zs::Vector{
 	return LI, CAPE, CIN, pLCL, zBCL, CAPECIN_ALCL, CIN_LCL, MRH_ALCL, MRH1, MRH2
 
 end
+
+function calc_dCAPE_thetae(ps::Vector{F},tks::Vector{F},qs::Vector{F},zs::Vector{F},adv_q::Vector{F},adv_tk::Vector{F}; parcel::Integer=1,dp_mix::Real=50,dp::Real=5,kiss::Integer=0) where F<:AbstractFloat
+
+	g = F(9.80665)
+	return g
+	#dCAPE = CAPE_old - CAPE_new
+
+end
+
+function calc_dilute_CAPE(ps::Vector{F},tks::Vector{F},qs::Vector{F},zs::Vector{F},adv_q::Vector{F},adv_tk::Vector{F}; parcel::Integer=1,dp_mix::Real=50,dp::Real=5,kiss::Integer=0) where F<:AbstractFloat
+	g = F(9.80665)
+	# p = pressure [hPa], tk = temp [K], q = spec. hum [kg/kg], z = height [m], s = entropy (J/kg)
+
+	# For first level = parcel level, calculate s
+	return g
+end
+
+function calc_entropy(tk,p,qtot)
+	# %T(K), p(hPa), qtot (kg/kg) 
+
+	tfreez=273.15; #K
+	pref=1000; # hPa
+	rl= 2.501e6; # J/kg latent heat of vaporization at 0C
+	cpliq=4.188e3; # J/kg/K specific heat of liquid water
+	cpwv=1.810e3; # J/kg/K specific heat of atmosphere water (wv)
+	cpres=1.00464e3; # J/kgK
+	c1=6.112; c2=17.67; c3=243.5;
+	epsl=0.62197 #ratio of gas constants of air and wv
+	rgas=287.04 #J/kg/K gas constant for dry air
+	rh2o=461.5 #J/kg/K gas constant for water vapor
+	#eref=6.106 #sat p at tfreez (mb)
+	#temperature dependent latent heat of vaporization
+	L= rl - (cpliq-cpwv)*(tk-tfreez); #T will be in celsius for this calculation
+	
+	esat = 0.01*saturation_vapor_pressure_liquid(tk)
+	#esat= c1*exp(c2* (tk-tfreez)./(c3+tk-tfreez)) # This formula is not accurate when T < 0 degC
+
+	qsat = epsl*esat/(p-esat) ; #saturation mixing ratio (in kg/kg)
+	#sat vapor pressure equation from weather.gov used in zm_conv:
+	#https://www.weather.gov/media/epz/wxcalc/rhTdFromWetBulb.pdf
+
+	qv=min(qtot,qsat);  #partition qtot into vapr part only..not sure on why they do this?
+	e=qv*p / (epsl+qv); #partial pressure exerted by wv ..is this ignoring -q*epsilon?
+	#https://svn.ssec.wisc.edu/repos/bennartz_group/LIBRARY/idl/std_libs/colib/humidity.pro
+	
+	#Now, calculate entropy
+	
+	s_entropy= (cpres + qtot*cpliq)*log(tk/tfreez) - rgas*log((p-e)/pref) + L*qv/tk - (qv*rh2o)*log(qv/qsat);
+	return s_entropy
+	#with qt=qsat
+
+	
+	#This will return the variable s_entropy calculated from p,q,T at a level
+	#returns nans where q_lev==0...will need to keep track of this
+	end
 
 """
 calc_BCL
