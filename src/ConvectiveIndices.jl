@@ -122,7 +122,11 @@ function q_to_rh(tk::Real, p::Real, q::Real)
 	es = saturation_vapor_pressure_liquid(tk);
 	c = 18.0152f0/28.9644f0;
 	e = (q*p*100f0)/(c + (1 - c)*q);
-	RH = 100 * e/es;
+	RH = 100 * e/saturation_vapor_pressure_liquid(tk);
+end
+
+function q_to_rh(tk::Vector{F},p::Vector{F},q::Vector{F}) where F<:AbstractFloat
+	RH = @. 100 * ((q*p*100f0)/((18.0152f0/28.9644f0) + (1 - 18.0152f0/28.9644f0 )*q))  /saturation_vapor_pressure_liquid(tk);
 end
 
 """
@@ -210,39 +214,38 @@ function thermo_rh(tk::Vector{F},p::Vector{F},rh::Vector{F}) where F<:AbstractFl
 	thetaes = zero(tk)
 	p_lcl = zero(tk)
 	tk_lcl = zero(tk)
-	r = zero(tk)
-	rsat = zero(tk)
+	#r = zero(tk)
+	#rsat = zero(tk)
 
 	@inbounds for i in 1:len
 		#p[i] = 100*p[i]  # convert t,p to SI units
-		a = ((p[i]/p0)^(-K))
-		theta[i] = tk[i]*a
+		# a = ((p[i]/p0)^(-K))
+		theta[i] = tk[i] * ((p[i]/p0)^(-K)) #a
 		es = saturation_vapor_pressure_liquid(tk[i]) # Saturation vapor pressure
 		e = (rh[i]/ 100 )*es  # vapour pressure (Pa)
 		
 		# Calculate water vapour mixing ratio r and q specific humidity
-		r[i] = (epsi*e)/(p[i]-e)
-		rsat[i] = (epsi*es)/(p[i]-es)
+		r = (epsi*e)/(p[i]-e)
+		rsat = (epsi*es)/(p[i]-es)
 
-		#ri = r[i] - rsat[i]; #liquid water content of air 
-		
+		#ri = r[i] - rsat[i]; #liquid water content of air 	
 		# change units from g/g to g/kg
-		rg = r[i]*1000; rsatg = rsat[i]*1000;
+		#rg = r[i]*1000; rsatg = rsat[i]*1000;
 
 		# calculate pseudo-equivalent potential temperature, from Bolton, Mon Wea Rev, 1980
 		# r = is g/kg
 		# Firstly calculate Temp at LCL, note e must be in mb.
 		tk_lcl[i] = ( F(2840) / (F(3.5) * log(tk[i]) - log(e/100) - F(4.805)) ) + 55;               # eqn 21, Bolton
-		thetae[i] = theta[i] *  exp(( (F(3.376)/tk_lcl[i]) - F(0.00254)) * rg * (1+F(0.81) *rg *F(0.001)));   # eqn 38, Bolton
-		thetaes[i] = theta[i] * exp(( (F(3.376)/tk_lcl[i]) - F(0.00254)) * rsatg * (1+F(0.81) *rg *F(0.001)));   # eqn 38, Bolton
+		thetae[i] = theta[i]  * exp( ((F(3.376)/tk_lcl[i]) - F(0.00254)) * r*1000 * (1+F(0.81) *r*1000 *F(0.001)));   # eqn 38, Bolton
+		thetaes[i] = theta[i] * exp( ((F(3.376)/tk_lcl[i]) - F(0.00254)) * rsat*1000 * (1+F(0.81) *r*1000 *F(0.001)));   # eqn 38, Bolton
 
 		#LCL height using Poisson's equation
-		k = F(0.2854) * (1 - F(0.28)*r[i]);
-		p_lcl[i] =  F(0.01)*p[i]*((tk_lcl[i]/tk[i])^(1/k));
+		k = F(0.2854) * (1 - F(0.28)*r);
+		p_lcl[i] =  F(0.01)*p[i]*((tk_lcl[i]/tk[i])^(1/ k ));
 
     end
 
-	return theta, thetae, thetaes, p_lcl, tk_lcl, r, rsat
+	return theta, thetae, thetaes, p_lcl, tk_lcl#, r, rsat
 
 end
 
@@ -289,11 +292,10 @@ function calc_CAPE_thetae(ps::Vector{F},tks::Vector{F},qs::Vector{F},zs::Vector{
 	if ps[end] < ps[1]
 		tks = reverse(tks,1); rhs = reverse(rhs,1); ps = reverse(ps,1)
 	end
-
+  
 	sp = ps[end]
 	
-
-	rhs = q_to_rh.(tks,ps,qs)
+	rhs = q_to_rh(tks,ps,qs)
 	
 	pres = collect(ceil(ps[1]):dp:floor(sp))
 	nlevs = size(pres,1)
