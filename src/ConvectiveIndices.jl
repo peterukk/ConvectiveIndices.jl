@@ -414,20 +414,48 @@ function calc_CAPE_thetae(ps::Vector{F},tks::Vector{F},qs::Vector{F},zs::Vector{
 
 end
 
-function calc_dCAPE_thetae(ps::Vector{F},tks::Vector{F},qs::Vector{F},zs::Vector{F},adv_q::Vector{F},adv_tk::Vector{F}; parcel::Integer=1,dp_mix::Real=50,dp::Real=5,kiss::Integer=0) where F<:AbstractFloat
-
-	g = F(9.80665)
-	return g
-	#dCAPE = CAPE_old - CAPE_new
-
-end
-
-function calc_dilute_CAPE(ps::Vector{F},tks::Vector{F},qs::Vector{F},zs::Vector{F},adv_q::Vector{F},adv_tk::Vector{F}; parcel::Integer=1,dp_mix::Real=50,dp::Real=5,kiss::Integer=0) where F<:AbstractFloat
+function calc_dilute_CAPE(ps::Vector{F},tks::Vector{F},qs::Vector{F},zs::Vector{F}; parcel_index::Integer=0) where F<:AbstractFloat
 	g = F(9.80665)
 	# p = pressure [hPa], tk = temp [K], q = spec. hum [kg/kg], z = height [m], s = entropy (J/kg)
 
+	if parcel_index > 0 # The parcel already decided
+		iparc = parcel_index
+	else
+		theta,thetae = thermo_rh(tks,100*ps,rhs)
+		thetae_env[pres.<(sp - 350)] .= 0; # Set elements above the lowest 350 hPa to 0
+		thetae_max,iparc = findmax(thetae_env); #Index of parcel level
+	end
 	# For first level = parcel level, calculate s
 	return g
+end
+
+function calc_dCAPE(ps::Vector{F},tks::Vector{F},qs::Vector{F},zs::Vector{F},adv_q::Vector{F},adv_tk::Vector{F}) where F<:AbstractFloat
+
+	g = F(9.80665)
+	#CAPE calculated "normally", in this case diluted CAPE:
+	CAPE = calc_dilute_CAPE(ps,tks,qs,zs)
+	#CAPE where environmental (but only environmental) tk,q gain an increment from advection
+	#T = T0 + adv(T)*dt = T0 + u*(dT/dx)*dt + v*(dT/dy)*dt
+	# adv_T is (u*dT/dx) = [ m/s * K/m] = [K/s]. Multiply by 3600 to get hourly increment
+	theta,thetae = thermo_rh(tk_env,100*ps,rhs)
+
+	itp = interpolate(knots,thetae,Gridded(Linear())); 
+	thetae_env = itp(pres)
+	itp = interpolate(knots,thetaes,Gridded(Linear())); 
+	thetaes_env = itp(pres)
+
+	thetae_env[pres.<(sp - 350)] .= 0; # Set elements above the lowest 350 hPa to 0
+	tmp,iparc = findmax(thetae_env); #Index of parcel level
+
+	tk0 = tks[iparc]; q0 = qs[iparc]
+ 	tks = tks .+ adv_tk*3600
+	qs = qs .+ adv_q*3600
+	tks[ind] = tk0; qs[ind] = q0
+
+	CAPE_adv = calc_dilute_CAPE(ps,tks,qs,zs,iparc)
+
+	#dCAPE = CAPE - CAPE_new
+
 end
 
 function calc_entropy(tk,p,qtot)
@@ -481,14 +509,14 @@ A process-based framework for quantifying the atmospheric preconditioning of sur
 function calc_BCL(qs::Vector{F},rhs::Vector{F},zs::Vector{F}) where F<:AbstractFloat
 
 	#qsats = F(100.0) ./rhs .* qs
-
+	
 	N = length(qs)
 	qmix = Vector{F}(undef,N)
 	qsats = Vector{F}(undef,N)
 
-	@inbounds for i = 1:N
+	@views @inbounds for i = 1:N
 		qsats[i] = (100/rhs[i]) * qs[i]
-		qmix[i] = @views mean(qs[i:N])
+		qmix[i] = mean(qs[i:N])
 	end
 	
 	z = vcat( collect(10000:-300:6100), collect(6000:-100:3000), collect(3000:-30:zs[end]) )
