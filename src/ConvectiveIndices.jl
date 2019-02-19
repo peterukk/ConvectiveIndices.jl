@@ -439,10 +439,12 @@ function calc_dCAPE(ps::Vector{F},tks::Vector{F},qs::Vector{F},zs::Vector{F},adv
 	# adv_T is (u*dT/dx) = [ m/s * K/m] = [K/s]. Multiply by 3600 to get hourly increment
 	theta,thetae = thermo_rh(tk_env,100*ps,rhs)
 
-	itp = interpolate(knots,thetae,Gridded(Linear())); 
-	thetae_env = itp(pres)
-	itp = interpolate(knots,thetaes,Gridded(Linear())); 
-	thetaes_env = itp(pres)
+	# itp = interpolate(knots,thetae,Gridded(Linear())); 
+	# thetae_env = itp(pres)
+	# itp = interpolate(knots,thetaes,Gridded(Linear())); 
+	# thetaes_env = itp(pres)
+
+	thetae_env = thetae; 
 
 	thetae_env[pres.<(sp - 350)] .= 0; # Set elements above the lowest 350 hPa to 0
 	tmp,iparc = findmax(thetae_env); #Index of parcel level
