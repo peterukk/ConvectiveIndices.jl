@@ -425,7 +425,22 @@ function calc_dilute_CAPE(ps::Vector{F},tks::Vector{F},qs::Vector{F},zs::Vector{
 		thetae_env[pres.<(sp - 350)] .= 0; # Set elements above the lowest 350 hPa to 0
 		thetae_max,iparc = findmax(thetae_env); #Index of parcel level
 	end
-	# For first level = parcel level, calculate s
+	# Initialize values
+	n = length(ps)
+	# Start from the initial parcel level
+	#ilev = iparc
+	for i in range(iparc,2,step=-1)
+		#blabla
+		dp = p[i-1]-p[i]
+		p_env = F(0.5) * (ps[i]+ps[i-1])
+		tk_env = F(0.5) * (tks[i]+tks[i-1])
+		qt_env = F(0.5) * (qs[i]+qs[i-1])
+
+		s_env = calc_entropy(tk_env,p_env,qt_env)
+
+
+	end
+	
 	return g
 end
 
@@ -460,24 +475,26 @@ function calc_dCAPE(ps::Vector{F},tks::Vector{F},qs::Vector{F},zs::Vector{F},adv
 
 end
 
-function calc_entropy(tk,p,qtot)
+function calc_entropy(tk::F,p::F,qtot::F) where F<:AbstractFloat
 	# %T(K), p(hPa), qtot (kg/kg) 
 
-	tfreez=273.15; #K
-	pref=1000; # hPa
-	rl= 2.501e6; # J/kg latent heat of vaporization at 0C
-	cpliq=4.188e3; # J/kg/K specific heat of liquid water
-	cpwv=1.810e3; # J/kg/K specific heat of atmosphere water (wv)
-	cpres=1.00464e3; # J/kgK
-	c1=6.112; c2=17.67; c3=243.5;
-	epsl=0.62197 #ratio of gas constants of air and wv
-	rgas=287.04 #J/kg/K gas constant for dry air
-	rh2o=461.5 #J/kg/K gas constant for water vapor
+	tfreez  = 	F(273.15) #K
+	pref 	= 	1000 # hPa
+	rl 		=	F(2.501e6) # J/kg latent heat of vaporization at 0C
+	cpliq	=	F(4.188e3) # J/kg/K specific heat of liquid water
+	cpwv	=	F(1.810e3) # J/kg/K specific heat of atmosphere water (wv)
+	cpres	=	F(1.00464e3) # J/kgK
+	c1		=	F(6.112)
+	c2		=	F(17.67)
+	c3		=	F(243.5)
+	epsl	=	F(0.62197) #ratio of gas constants of air and wv
+	rgas	=	F(287.04) #J/kg/K gas constant for dry air
+	rh2o	=	F(461.5) #J/kg/K gas constant for water vapor
 	#eref=6.106 #sat p at tfreez (mb)
 	#temperature dependent latent heat of vaporization
 	L= rl - (cpliq-cpwv)*(tk-tfreez); #T will be in celsius for this calculation
 	
-	esat = 0.01*saturation_vapor_pressure_liquid(tk)
+	esat = F(0.01)*saturation_vapor_pressure_liquid(tk)
 	#esat= c1*exp(c2* (tk-tfreez)./(c3+tk-tfreez)) # This formula is not accurate when T < 0 degC
 
 	qsat = epsl*esat/(p-esat) ; #saturation mixing ratio (in kg/kg)
@@ -487,17 +504,66 @@ function calc_entropy(tk,p,qtot)
 	qv=min(qtot,qsat);  #partition qtot into vapr part only..not sure on why they do this?
 	e=qv*p / (epsl+qv); #partial pressure exerted by wv ..is this ignoring -q*epsilon?
 	#https://svn.ssec.wisc.edu/repos/bennartz_group/LIBRARY/idl/std_libs/colib/humidity.pro
-	
-	#Now, calculate entropy
-	
+
 	s_entropy= (cpres + qtot*cpliq)*log(tk/tfreez) - rgas*log((p-e)/pref) + L*qv/tk - (qv*rh2o)*log(qv/qsat);
 	return s_entropy
 	#with qt=qsat
 
-	
-	#This will return the variable s_entropy calculated from p,q,T at a level
-	#returns nans where q_lev==0...will need to keep track of this
 	end
+
+function calc_entropy_inverse(s::F,p::F,qtot::F,tk_guess::F) where F<:AbstractFloat
+	# Given the entropy, pressure and total water, iteratively solve the entropy eq. for temperature using Newtons method
+	tfreez  = 	F(273.15) #K
+	pref 	= 	1000 # hPa
+	rl 		=	F(2.501e6) # J/kg latent heat of vaporization at 0C
+	cpliq	=	F(4.188e3) # J/kg/K specific heat of liquid water
+	cpwv	=	F(1.810e3) # J/kg/K specific heat of atmosphere water (wv)
+	cpres	=	F(1.00464e3) # J/kgK
+	c1		=	F(6.112)
+	c2		=	F(17.67)
+	c3		=	F(243.5)
+	epsl	=	F(0.62197) #ratio of gas constants of air and wv
+	rgas	=	F(287.04) #J/kg/K gas constant for dry air
+	rh2o	=	F(461.5) #J/kg/K gas constant for water vapor
+
+	loopmax = 100
+	tk = tk_guess
+	i = 0
+	while i < loopmax
+		L = latent_heat_vaporization(tk)
+		esat = F(0.01)*saturation_vapor_pressure_liquid(tk)
+		qsat = epsl*esat/(p-esat)
+		qv = min(qtot,qsat)
+		e = qv*p / (epsl+qv)
+		
+		#ds1 = calc_entropy(tk,p,qtot)
+		ds1 = (cpres + qtot*cpliq)*log(tk/tfreez) - rgas*log((p-e)/pref) + L*qv/tk - (qv*rh2o)*log(qv/qsat) - s
+		L = latent_heat_vaporization(tk-1)
+		esat = F(0.01)*saturation_vapor_pressure_liquid(tk-1)
+		qsat = epsl*esat/(p-esat)
+		qv = min(qtot,qsat)
+		e = qv*p / (epsl+qv)
+
+		ds2 = (cpres + qtot*cpliq)*log((tk-1)/tfreez) - rgas*log((p-e)/pref) + L*qv/(tk-1) - (qv*rh2o)*log(qv/qsat) - s
+		dTs = ds1/(ds2 -ds1)
+		tk = tk + dTs
+
+		if abs(dTs) < F(0.001)
+			break
+		end
+		i += 1
+		
+	end
+	print(i)
+	esat = F(0.01)*saturation_vapor_pressure_liquid(tk)
+	qsat = epsl*esat/(p-esat)
+	return tk,qsat
+
+end
+
+function latent_heat_vaporization(tk::F) where F<:AbstractFloat
+	return F(2.501e6) - (F(4.188e3)-F(1.810e3))*(tk-F(273.15))
+end
 
 """
 calc_BCL
