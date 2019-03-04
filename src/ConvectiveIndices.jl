@@ -12,6 +12,7 @@ export dewpoint_to_q
 export calc_CAPE_thetae
 export calc_BCL
 export calc_entropy
+export calc_entropy_inverse
 
 using Interpolations
 using LinearAlgebra
@@ -417,42 +418,52 @@ end
 function calc_dilute_CAPE(ps::Vector{F},tks::Vector{F},qs::Vector{F},zs::Vector{F}; parcel_index::Integer=0) where F<:AbstractFloat
 
 	# p = pressure [hPa], tk = temp [K], q = spec. hum [kg/kg], z = height [m], s = entropy (J/kg)
-
+	sp = ps[end]
 	if parcel_index > 0 # The parcel already decided
-		iparc = parcel_index
+		ilaunch = parcel_index
 	else
 		theta,thetae = thermo_rh(tks,100*ps,rhs)
-		thetae_env[pres.<(sp - 350)] .= 0; # Set elements above the lowest 350 hPa to 0
-		thetae_max,iparc = findmax(thetae_env); #Index of parcel level
+		thetae[ps.<(sp - 350)] .= 0; # Set elements above the lowest 350 hPa to 0
+		thetae_max,ilaunch = findmax(thetae); #Index of parcel level
 	end
 	# Initialize values
-	n = length(ps)
+	N = length(ps)
 
 	g = F(9.80665)	# Gravity
 	R = F(287.04)	# gas constant
-	tk_mix = F(0)	# Tempertaure of the entraining parcel
-	qt_mix = F(0)	# Total water of the entraining parcel
-	s_mix = F(0)	# Entropy of the entraining parcel
+	tk_mix = Vector{F}(undef,N)	# Tempertaure of the entraining parcel
+	qt_mix = Vector{F}(undef,N)	# Total water of the entraining parcel
+	qsat_mix = Vector{F}(undef,N)	# Saturation mixing ratio of the entraining parcel
+	s_mix = Vector{F}(undef,N)	# Entropy of the entraining parcel
 
-	qt_env = F(0)    # Environmental total water
-	s_env = F(0)	# Environmental entropy
-	tk_env = F(0)	# Environmental temperature	
-	p_env = F(0)		# Environmental pressure
+	# qt_env = F(0)    # Environmental total water
+	# s_env = F(0)	# Environmental entropy
+	# tk_env = F(0)	# Environmental temperature	
+	# p_env = F(0)		# Environmental pressure
+	# qtp0 = F(0)		# Parcel launch total water
+	# sp0  = F(0)		# Parcel launch entropy.
+	# mp0 = F(0)		# Parcel launch relative mass flux
+	# qtp = F(0)  	# Parcel total water	
+	# sp = F(0)		# Parcel entropy
+	# mp = F(0)		# Parcel relative mass flux
 
-	qtp0 = F(0)		# Parcel launch total water
-	sp0  = F(0)		# Parcel launch entropy.
-	mp0 = F(0)		# Parcel launch relative mass flux
-	qtp = F(0)  	# Parcel total water	
-	sp = F(0)		# Parcel entropy
-	mp = F(0)		# Parcel relative mass flux
+	qtp0 = qs[ilaunch]
+	sp0 = calc_entropy(tks[ilaunch],ps[ilaunch],qs[ilaunch])
+	mp = F(1)
+	s_mix[ilaunch] = sp0;
+	qt_mix[ilaunch] = qtp0;
+	tk_guess = tks[ilaunch];
 
-	for i in range(iparc,2,step=-1)
+	tk_mix[ilaunch],qsat_mix[ilaunch] =  calc_entropy_inverse(sp0,ps[ilaunch],qtp0,tk_guess) 
+
+
+	for i in range(ilaunch-1,1,step=-1)
 		# ps[i] is the current level, loop traverses back the array = upwards in the atmos. column
-		dp = p[i-1]-p[i]
+		dp = ps[i]-ps[i+1] # dp is negative
 
-		p_env = F(0.5) * (ps[i]+ps[i-1])
-		tk_env = F(0.5) * (tks[i]+tks[i-1])
-		qt_env = F(0.5) * (qs[i]+qs[i-1])
+		p_env = F(0.5) * (ps[i]+ps[i+1])
+		tk_env = F(0.5) * (tks[i]+tks[i+1])
+		qt_env = F(0.5) * (qs[i]+qs[i+1])
 		s_env = calc_entropy(tk_env,p_env,qt_env)
 
 		dmpdz	= -F(1e-3) 				# Entrainment rate (/m)
@@ -464,14 +475,14 @@ function calc_dilute_CAPE(ps::Vector{F},tks::Vector{F},qs::Vector{F},zs::Vector{
 		# entrains q,s out of intervening dp layers, in which linear variation is assumed
 		# so really it entrains the mean of the 2 stored values.
 
-         sp[i]  = sp[i]  - dmpdp*dp*senv 
-         qtp[i] = qtp[i] - dmpdp*dp*qtenv 
-         mp[i]  = mp[i]  - dmpdp*dp
+         sp  = sp  - dmpdp*dp*s_env 
+         qtp = qtp - dmpdp*dp*qt_env 
+         mp  = mp  - dmpdp*dp
 		
 		 # Entrain s and qt to next level.
 
-         s_mix[i]  = [sp0[i]  +  sp[i]] / [mp0[i] + mp[i]]
-		 qt_mix[i] = [qtp0[i] + qtp[i]] / [mp0[i] + mp[i]]
+         s_mix[i]  = (sp0  +  sp) / (mp0 + mp)
+		 qt_mix[i] = (qtp0 + qtp) / (mp0 + mp)
 		 # The new parcel entropy and total water due to mixing are now calculated
 	
 
@@ -480,11 +491,11 @@ function calc_dilute_CAPE(ps::Vector{F},tks::Vector{F},qs::Vector{F},zs::Vector{
 
          tk_guess = tk_mix[i+1]
          
-         tk_mix =  calc_entropy_inverse(s_mix,ps[i],qt_mix,tk_guess)  
+         tk_mix[i],qsat_mix[i] =  calc_entropy_inverse(s_mix[i],ps[i],qt_mix[i],tk_guess)  
 
 	end
 	
-	return g
+	return tk_mix,qsat_mix
 end
 
 function calc_dCAPE(ps::Vector{F},tks::Vector{F},qs::Vector{F},zs::Vector{F},adv_q::Vector{F},adv_tk::Vector{F}) where F<:AbstractFloat
