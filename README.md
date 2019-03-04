@@ -4,7 +4,7 @@ A Julia package for calculating convective indices (e.g. CAPE) from atmospheric 
 The core function is ```calc_CAPE_thetae```, which outputs parameters such as CAPE, Lifted Index and CIN from input columns of pressure, temperature, specific humidity and geometric height, for a user-defined parcel (surface/most unstable, with/without vertical mixing).
 
 ```
-elp?> calc_CAPE_thetae
+help?> calc_CAPE_thetae
 search: calc_CAPE_thetae
 
   calc_CAPE_thetae (ps[hPa], tks[K], qs[kg/kg], zs[m], parcel, dp_mix[hPa], dp_intp[hPa], kiss)
