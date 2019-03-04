@@ -10,7 +10,7 @@ search: calc_CAPE_thetae
 calc_CAPE_thetae (ps[hPa], tks[K], qs[kg/kg], zs[m], parcel, dp_mix[hPa], dp_intp[hPa], kiss)
 
 Calculate convective indices such as CAPE and CIN for a parcel of choice (surface/most unstable, 
-with/without vertical mixing). Uses a theta-e formulation which increases absolute values.
+with/without vertical mixing). 
 
   Examples
   ≡≡≡≡≡≡≡≡≡≡
