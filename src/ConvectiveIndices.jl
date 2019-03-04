@@ -252,41 +252,43 @@ end
 
 
 """
-	calc_CAPE_thetae (ps[hPa], tks[K], qs[kg/kg], zs[m], parcel, dp_mix[hPa], dp[hPa], kiss) 
+	calc_CAPE_thetae (ps[hPa], tks[K], qs[kg/kg], zs[m], parcel, dp_mix[hPa], dp_intp[hPa], kiss) 
 
-Calculate convective indices such as **CAPE** and **CIN** for a parcel of choice (surface/most unstable, with/without vertical mixing).
+Calculate convective indices such as **CAPE** and **CIN** for a parcel of choice (surface/most unstable, with/without vertical mixing), using a theta-e formulation.
 
 # Examples
 
 ```jldoctest 
-julia> LI, CAPE, CIN = calc_CAPE_theta(ps,tks,qs,zs,parcel = 2, dp_mix = 100, kiss= 1)
-(-27.416924139871526, 4428.182537242374, 137.85516940477973)
-julia> LI, CAPE, CIN, pLCL, zBCL, CAPECIN_ALCL, CIN_LCL, MRH_ALCL, MRH1, MRH2 = calc_CAPE_thetae(ps,tks,qs,zs)
-(-1.6502346944216129, 120.80558885439602, 23.64198824254466, 787.8515322945883, 351.837890625, -23.998722156796717, 0, 63.845851443325564, 76.3582759152618, 56.28591549989976)
+julia> LI, CAPE, CIN = calc_CAPE_theta(ps,tks,qs,zs) # most unstable parcel, mixed over 50 hPa (default)
+(-8.94582333506736, 1613.7159227760612, 327.257167221434))
+julia> LI, CAPE, CIN = calc_CAPE_theta(ps,tks,qs,zs, parcel = 2, dp_mix = 0) # surface parcel, not mixed
+(-12.416924139871522, 2428.182537242374, 85.85516940477973)
+julia> LI, CAPE, CIN, pLCL, zBCL, CAPECIN_ALCL, CIN_LCL, MRH_ALCL, MRH1, MRH2 = calc_CAPE_thetae(ps,tks,qs,zs, FULL = 1) # full calculations
+(-8.94582333506736, 1613.7159227760612, 327.257167221434, 936.6429885118564, 1230.0, -189.68905798724995, 128.5705360872618, 69.90722164805184, 56.290565968008316, 30.494525283693054)
 ```
 
-**OUTPUT** by default, following Float32 values are returned (kiss=0): \n
-Lifted Index [°C], CAPE [J/kg], CIN [J/kg], pLCL [hPa], z_BCL [m], CAPE-CIN above the LCL [J/kg], CIN below LCL [J/kg], MRH (mean RH%) above the LCL [%], MRH 600-800 hPa, MRH 300-600 hPa \n
-
-Toggle kiss=1 to only return Lifted Index, CAPE and CIN. \n
+**OUTPUT** for FULL=1: \n
+Lifted Index [°C], CAPE [J/kg], CIN [J/kg], pLCL [hPa], Buoyant Condensation Level [m], CAPE-CIN above the LCL [J/kg], CIN below LCL [J/kg], MRH (mean RH%) above the LCL [%], MRH 600-800 hPa, MRH 300-600 hPa \n
 
 **INPUT**:
 (N-element ARRAYs) **ps**,**tks**,**qs**,**zs** = vertical profiles of pressure, temperature, specific humidity and geopotential height \n
 OPTIONAL keyword arguments: \n
 `parcel = 1` : the most unstable parcel in the lowest 350 hPa (default) \n
-`parcel = 2` : surface parcel \n
+`parcel = 2` : surface parcel, or parcel from the lowest level \n
 `dp_mix = 0...100` : pressure layer depth [hPa] for mixing the source parcel (default 50, use 0 for no mixing) \n
-`kiss = 1`: keep it simple, stupid - output only CAPE, LI, and CIN (default 0). \n
+`dp_intp = 5` linearly interpolate to a uniform pressure grid with resolution dp (default 5). Use 0 to skip. This is a lot faster, but disables mixing and FULL option,
+and is not recommended for low-resolution input. \n
+`FULL = 1`: Full calculations to include also less known convective predictors, which were found useful in [1]. \n
 
-This routine uses a THETA-E formulation for all indices (similarly to ECMWF CAPE), thereby skipping explicit parcel computations. 
+This routine uses an `equivalent potential temperature formulation` for all indices (similarly to ECMWF CAPE), avoiding vertical loops altogether. 
 This results in larger absolute values (e.g. for CAPE, 30% larger) than classic computations, but in no worse correlation with observed convection [1].
 
-TIP: Use `parcel=1` and `dp_mix=50` for a hybrid mixed-layer most-unstable parcel similar to the one used by ECMWF. The MLMU-Lifted Index was the overall
-thunderstorm predictor in Europe in [1].
+NOTE: Default option `parcel=1` and `dp_mix=50` corresponds to a hybrid mixed-layer most-unstable parcel similar to the one used by ECMWF. The MLMU-Lifted Index was the overall
+thunderstorm index for Europe in [1].
 
 [1] Ukkonen and Mäkelä (2019): Evaluation of machine learning classifiers for predicting deep convection
 """
-function calc_CAPE_thetae(ps::Vector{F},tks::Vector{F},qs::Vector{F},zs::Vector{F}; parcel::Integer=1,dp_mix::Real=50,dp::Real=5,kiss::Integer=0) where F<:AbstractFloat
+function calc_CAPE_thetae(ps::Vector{F},tks::Vector{F},qs::Vector{F},zs::Vector{F}; parcel::Integer=1,dp_mix::Real=50,dp_intp::Real=5,FULL::Integer=0) where F<:AbstractFloat
 
 	g = F(9.80665)
 
@@ -298,26 +300,35 @@ function calc_CAPE_thetae(ps::Vector{F},tks::Vector{F},qs::Vector{F},zs::Vector{
 	sp = ps[end]
 	
 	rhs = q_to_rh(tks,ps,qs)
-	
-	pres = collect(ceil(ps[1]):dp:floor(sp))
-	nlevs = size(pres,1)
-
-	# Interpolation: use "Interpolations" package for linear interpolation on a non-uniform grid
-	knots = (ps,);
-
-	itp = interpolate(knots,tks,Gridded(Linear())) 
-	tk_env = itp(pres)
-	itp = interpolate(knots,rhs,Gridded(Linear()))
-	rh_env = itp(pres)
-	itp = interpolate(knots,zs,Gridded(Linear()))
-	z_env = itp(pres)
-
 	theta,thetae,thetaes = thermo_rh(tks,100*ps,rhs)
 
-	itp = interpolate(knots,thetae,Gridded(Linear())); thetae_env = itp(pres)
-	itp = interpolate(knots,thetaes,Gridded(Linear())); thetaes_env = itp(pres)
+	if dp_intp == 0 # No interpolation to a uniform pressure grid 
+		FULL = 0   # Full calculations are skipped 
+		dp_mix = 0 # No linear parcel mixing is done
+		thetae_env = thetae 
+		thetaes_env = thetaes
+		tk_env = tks; rh_env = rhs; z_env = zs
+		pres = ps
+		nlevs = length(pres)
+	else # Interpolation
+		pres = collect(ceil(ps[1]):dp_intp:floor(sp))
+		nlevs = length(pres)
+	
+		# use "Interpolations" package for linear interpolation on a non-uniform grid
+		knots = (ps,);
+	
+		itp = interpolate(knots,tks,Gridded(Linear())) 
+		tk_env = itp(pres)
+		itp = interpolate(knots,rhs,Gridded(Linear()))
+		rh_env = itp(pres)
+		itp = interpolate(knots,zs,Gridded(Linear()))
+		z_env = itp(pres)
+	
+		itp = interpolate(knots,thetae,Gridded(Linear())); thetae_env = itp(pres)
+		itp = interpolate(knots,thetaes,Gridded(Linear())); thetaes_env = itp(pres)
+	end
 
-	# FIND PARCEL
+	# FIND LAUNCH PARCEL
 	if parcel == 1 #	--> MOST UNSTABLE
 		# Find level with the highest theta-e in the lowest 350 hPa
 		thetae_env[pres.<(sp - 350)] .= 0; # Set elements above the lowest 350 hPa to 0
@@ -330,7 +341,7 @@ function calc_CAPE_thetae(ps::Vector{F},tks::Vector{F},qs::Vector{F},zs::Vector{
 	# Mix the properties over depth specified by dp_mix (e.g. 50 hPa)
 	@views if dp_mix > 0
 		#how many indices correspond to the mixing depth divided by two? (50 hPa mixing depth = 25 below, 25 above)
-		dind = floor(Int,(dp_mix/2)/dp)
+		dind = floor(Int,(dp_mix/2)/dp_intp)
 		if nlevs > (iPL+dind)
 			p0 = mean(pres[iPL-dind:iPL+dind])
 			tk0 = mean(tk_env[iPL-dind:iPL+dind])
@@ -356,13 +367,10 @@ function calc_CAPE_thetae(ps::Vector{F},tks::Vector{F},qs::Vector{F},zs::Vector{
 	# CAPE AND CIN
 	#the quantity being integrated in theta-e formulation for CAPE
 	tdiff = (thetae_parc .- thetaes_env)./thetaes_env
-	tdiff_cape = copy(tdiff)
-	#Only positive regions in sounding contribute to CAPE
-	tdiff_cape[tdiff_cape.<0] .= 0
 
 	iLCL = findlast(pres.<pLCL)
-	iLFC = @views findlast(tdiff[1:iLCL].>0)
-	iEL = @views findfirst(tdiff.>0)
+	iLFC = findlast(tdiff[1:iLCL].>0)
+	iEL = findfirst(tdiff.>0)
 
 	if iLFC == nothing
 		CAPE = F(0)
@@ -372,17 +380,20 @@ function calc_CAPE_thetae(ps::Vector{F},tks::Vector{F},qs::Vector{F},zs::Vector{
 		if (iLFC == iEL)
 			iEL=iEL-1;
 		end
+		#Only positive regions in sounding contribute to CAPE?
+		tdiff_cape = copy(tdiff)
+		tdiff_cape[tdiff_cape.<0] .= 0
 		CAPE = -g*trapz(z_env[iEL:iLFC],tdiff_cape[iEL:iLFC])
 		CIN = g*trapz(z_env[iLFC:iPL],tdiff[iLFC:iPL])
 	end
 	
 	# RETURN EARLY?
-	if kiss == 1 #Stop here and return with only LI,CAPE,CIN 
+	if FULL == 0 # Stop here and return with only LI,CAPE,CIN 
 		return LI,CAPE,CIN
 	end
 	
 	# CAPE and RH in the 250-hPa depth layer ABOVE LCL	
-	idp_250 = div(250,dp)
+	idp_250 = div(250,dp_intp)
 	if iLCL-idp_250 > 0
 		MRH_ALCL = @views mean(rh_env[iLCL-idp_250:iLCL])
 		CAPECIN_ALCL = -g*trapz(z_env[iLCL-idp_250:iLCL],tdiff[iLCL-idp_250:iLCL])
@@ -417,21 +428,33 @@ function calc_CAPE_thetae(ps::Vector{F},tks::Vector{F},qs::Vector{F},zs::Vector{
 
 end
 
-function calc_dilute_CAPE(ps::Vector{F},tks::Vector{F},qs::Vector{F},zs::Vector{F}; parcel_index::Integer=0) where F<:AbstractFloat
 
+"""
+```jldoctest 
+julia> CAPE_dilute = calc_dilute_CAPE(ps,tks,qs,zs)
+```
+where the input variables are `descending columns` of: pressure [hPa], temperature [K], specific humidity [kg/kg] and height [m],
+returns the `diluted CAPE` using a constant mass entrainment rate. This is a simplified version of subroutine buoyan_dilute (by Richard Neale) in the CAM model.
+
+The parcel is launched from the level with the highest theta-e in the lowest 350 hPa of the atmosphere. Optionally, the index can be specified by the user: 
+calc_dilute_CAPE(ps,tks,qs,zs,parcel_index=30), would use a surface parcel if length(ps) = 30.
+
+"""
+
+function calc_dilute_CAPE(ps::Vector{F},tks::Vector{F},qs::Vector{F},zs::Vector{F}; parcel_index::Integer=0) where F<:AbstractFloat
 	# p = pressure [hPa], tk = temp [K], q = spec. hum [kg/kg], z = height [m], s = entropy (J/kg)
 	sp = ps[end]
-
 	rhs = q_to_rh(tks,ps,qs)
 
 	if parcel_index > 0 # The parcel already decided
 		ilaunch = parcel_index
+		print(ilaunch)
 	else
 		theta,thetae = thermo_rh(tks,100*ps,rhs)
 		thetae[ps.<(sp - 350)] .= 0; # Set elements above the lowest 350 hPa to 0
 		thetae_max,ilaunch = findmax(thetae); #Index of parcel level
 	end
-	println("ilaunch: ",ilaunch)
+	#println("ilaunch: ",ilaunch)
 	# Initialize values
 	N = length(ps)
 
@@ -441,7 +464,7 @@ function calc_dilute_CAPE(ps::Vector{F},tks::Vector{F},qs::Vector{F},zs::Vector{
 	qt_mix = zero(tks)	# Total water of the entraining parcel
 	qsat_mix = zero(tks)	# Saturation mixing ratio of the entraining parcel
 	s_mix = zero(tks)	# Entropy of the entraining parcel
-
+	tdiff = zero(tks)  # (virtual) temperature difference between environment and parcel
 	# qt_env = F(0)    # Environmental total water
 	# s_env = F(0)	# Environmental entropy
 	# tk_env = F(0)	# Environmental temperature	
@@ -453,14 +476,15 @@ function calc_dilute_CAPE(ps::Vector{F},tks::Vector{F},qs::Vector{F},zs::Vector{
 	sp = F(0)		# Parcel entropy
 	mp = F(0)		# Parcel relative mass flux
 
+	# Initialization
 	qtp0 = qs[ilaunch]
 	sp0 = calc_entropy(tks[ilaunch],ps[ilaunch],qs[ilaunch])
 	mp0 = F(1)
-	s_mix[ilaunch] = sp0;
-	qt_mix[ilaunch] = qtp0;
-	tk_guess = tks[ilaunch];
+	s_mix[ilaunch] = sp0
+	qt_mix[ilaunch] = qtp0
+	tk_guess = tks[ilaunch]
 
-	tk_mix[ilaunch],qsat_mix[ilaunch] =  calc_entropy_inverse(sp0,ps[ilaunch],qtp0,tk_guess) 
+	tk_mix[ilaunch],qsat_mix[ilaunch] =  calc_entropy_inverse(sp0,ps[ilaunch],qtp0,tk_guess)
 
 
 	for i in range(ilaunch-1,1,step=-1)
@@ -485,34 +509,56 @@ function calc_dilute_CAPE(ps::Vector{F},tks::Vector{F},qs::Vector{F},zs::Vector{
          qtp = qtp - dmpdp*dp*qt_env 
 		 mp  = mp  - dmpdp*dp
 		 
-		 println(" p_env			sp				qtp				mp")
-		 println("$p_env	$sp		$qtp	$mp")
+		 #println(" p_env			sp				qtp				mp")
+		 #println("$p_env	$sp		$qtp	$mp")
 
 		 # Entrain s and qt to next level.
 
          s_mix[i]  = (sp0  +  sp) / (mp0 + mp)
 		 qt_mix[i] = (qtp0 + qtp) / (mp0 + mp)
 	
-		 # The new parcel entropy and total water due to mixing are now calculated
-	
+		# The new parcel entropy and total water due to mixing are now calculated
 
 		# Invert entropy from s and q to determine T and qsat of mixture 
 		# t[i,k] used as a first guess so that it converges faster.
 
          tk_guess = tk_mix[i+1]
          
-         tk_mix[i],qsat_mix[i] =  calc_entropy_inverse(s_mix[i],ps[i],qt_mix[i],tk_guess)  
+		 tk_mix[i],qsat_mix[i] =  calc_entropy_inverse(s_mix[i],ps[i],qt_mix[i],tk_guess) 
+		 
+		 #tk_mix_v = tk_mix[i]
+		 #tk_env_v = tks[i]
+		 tk_mix_v = virtualtemp(tk_mix[i],(qt_mix[i]/(1-qt_mix[i])))
+		 tk_env_v = virtualtemp(tks[i],(qs[i]/(1-qs[i])))
+		 tdiff[i] = (tk_mix_v + 0.5 - tk_env_v)/tk_env_v
+		 println("p, tmix, qmix")
+		 println([p_env,tk_mix[i],qsat_mix[i]])
 	end
-	
 	#return tk_mix,qsat_mix,qt_mix
-	tdiff = zero(tks)
-	for i in range(1,N)
-		tk_mix_v = virtualtemp(tk_mix[i],(qt_mix[i]/(1-qt_mix[i])))
-		tk_env_v = virtualtemp(tks[i],(qs[i]/(1-qs[i])))
 
-		tdiff[i] = tk_mix_v - tk_env_v
+	iLCL = findlast(qt_mix .>= qsat_mix)
+	iLFC = findlast(tdiff[1:iLCL].>0)
+	iEL = findfirst(tdiff.<0)
+	#return iLCL,iLFC,iEL
+	if iLFC == nothing
+		CAPE = F(0)
+		#CIN = NaN
+		iLFC = NaN
+	else
+		if (iLFC == iEL)
+			iEL=iEL-1;
+		end
+		if iEL == nothing
+			iEL = 1
+		end
+		#Only positive regions in sounding contribute to CAPE??
+		tdiff_cape = copy(tdiff)
+		tdiff_cape[tdiff_cape.<0] .= 0
+		CAPE = -g*trapz(zs[iEL:iLFC],tdiff_cape[iEL:iLFC])
+		#CIN = g*trapz(zs[iLFC:ilaunch],tdiff[iLFC:ilaunch])
 	end
-	return tdiff
+	#return CAPE
+	return iLCL,iLFC,iEL,CAPE #,CIN,tdiff
 end
 
 function calc_dCAPE(ps::Vector{F},tks::Vector{F},qs::Vector{F},zs::Vector{F},adv_q::Vector{F},adv_tk::Vector{F}) where F<:AbstractFloat
@@ -532,10 +578,10 @@ function calc_dCAPE(ps::Vector{F},tks::Vector{F},qs::Vector{F},zs::Vector{F},adv
 
 	thetae_env = thetae; 
 
-	thetae_env[pres.<(sp - 350)] .= 0; # Set elements above the lowest 350 hPa to 0
-	tmp,iparc = findmax(thetae_env);findlastlevel
+	thetae_env[ps.<(sp - 350)] .= 0; # Set elements above the lowest 350 hPa to 0
+	tmp,iparc = findmax(thetae_env);
 
-	tk0 = tks[iparc]; q0 = qs[iparc]findlast
+	tk0 = tks[iparc]; q0 = qs[iparc];
  	tks = tks .+ adv_tk*3600
 	qs = qs .+ adv_q*3600
 	tks[ind] = tk0; qs[ind] = q0
