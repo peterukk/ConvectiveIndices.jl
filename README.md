@@ -46,7 +46,7 @@ search: calc_CAPE_thetae
   [1] Ukkonen and Mäkelä (2018): Evaluation of machine learning classifiers for predicting deep convection, JAMES.
 ```
 
-The code is computationally efficient yet simple and easy to modify thanks to Julias language design. 
+The code is relatively fast yet easy to read and modify thanks to Julias language design. 
 Processing 6.2 million reanalysis pseudosoundings on an 8-core CPU:
 
 ```
