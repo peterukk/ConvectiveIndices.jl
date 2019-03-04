@@ -15,11 +15,14 @@ with/without vertical mixing).
   Examples
   ≡≡≡≡≡≡≡≡≡≡
 
-julia> LI, CAPE, CIN = calc_CAPE_theta(ps,tks,qs,zs) # most unstable parcel, mixed over 50 hPa (default)
+julia> # most unstable parcel, mixed over 50 hPa (default)
+LI, CAPE, CIN = calc_CAPE_theta(ps,tks,qs,zs) 
   (-8.94582333506736, 1613.7159227760612, 327.257167221434))
-julia> LI, CAPE, CIN = calc_CAPE_theta(ps,tks,qs,zs, parcel = 2, dp_mix = 0) # surface parcel, not mixed
+julia> # surface parcel, not mixed
+LI, CAPE, CIN = calc_CAPE_theta(ps,tks,qs,zs, parcel = 2, dp_mix = 0)
   (-12.416924139871522, 2428.182537242374, 85.85516940477973) 
-julia> LI, CAPE, CIN, pLCL, zBCL, CAPECIN_ALCL, CIN_LCL, MRH_ALCL, MRH1, MRH2 = calc_CAPE_thetae(ps,tks,qs,zs, FULL = 1) # full calculations
+julia>  # full calculations
+LI, CAPE, CIN, pLCL, zBCL, CAPECIN_ALCL, CIN_LCL, MRH_ALCL, MRH1, MRH2 = calc_CAPE_thetae(ps,tks,qs,zs, FULL = 1)
   (-8.94582333506736, 1613.7159227760612, 327.257167221434, 936.6429885118564, 1230.0, -189.68905798724995, 128.5705360872618, 69.90722164805184, 56.290565968008316, 30.494525283693054)
 
 
