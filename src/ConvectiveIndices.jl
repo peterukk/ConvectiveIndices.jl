@@ -13,6 +13,8 @@ export calc_CAPE_thetae
 export calc_BCL
 export calc_entropy
 export calc_entropy_inverse
+export calc_dCAPE
+export calc_dilute_CAPE
 
 using Interpolations
 using LinearAlgebra
@@ -419,6 +421,9 @@ function calc_dilute_CAPE(ps::Vector{F},tks::Vector{F},qs::Vector{F},zs::Vector{
 
 	# p = pressure [hPa], tk = temp [K], q = spec. hum [kg/kg], z = height [m], s = entropy (J/kg)
 	sp = ps[end]
+
+	rhs = q_to_rh(tks,ps,qs)
+
 	if parcel_index > 0 # The parcel already decided
 		ilaunch = parcel_index
 	else
@@ -426,15 +431,16 @@ function calc_dilute_CAPE(ps::Vector{F},tks::Vector{F},qs::Vector{F},zs::Vector{
 		thetae[ps.<(sp - 350)] .= 0; # Set elements above the lowest 350 hPa to 0
 		thetae_max,ilaunch = findmax(thetae); #Index of parcel level
 	end
+	println("ilaunch: ",ilaunch)
 	# Initialize values
 	N = length(ps)
 
 	g = F(9.80665)	# Gravity
 	R = F(287.04)	# gas constant
-	tk_mix = Vector{F}(undef,N)	# Tempertaure of the entraining parcel
-	qt_mix = Vector{F}(undef,N)	# Total water of the entraining parcel
-	qsat_mix = Vector{F}(undef,N)	# Saturation mixing ratio of the entraining parcel
-	s_mix = Vector{F}(undef,N)	# Entropy of the entraining parcel
+	tk_mix = zero(tks)	# Tempertaure of the entraining parcel
+	qt_mix = zero(tks)	# Total water of the entraining parcel
+	qsat_mix = zero(tks)	# Saturation mixing ratio of the entraining parcel
+	s_mix = zero(tks)	# Entropy of the entraining parcel
 
 	# qt_env = F(0)    # Environmental total water
 	# s_env = F(0)	# Environmental entropy
@@ -443,13 +449,13 @@ function calc_dilute_CAPE(ps::Vector{F},tks::Vector{F},qs::Vector{F},zs::Vector{
 	# qtp0 = F(0)		# Parcel launch total water
 	# sp0  = F(0)		# Parcel launch entropy.
 	# mp0 = F(0)		# Parcel launch relative mass flux
-	# qtp = F(0)  	# Parcel total water	
-	# sp = F(0)		# Parcel entropy
-	# mp = F(0)		# Parcel relative mass flux
+	qtp = F(0)  	# Parcel total water	
+	sp = F(0)		# Parcel entropy
+	mp = F(0)		# Parcel relative mass flux
 
 	qtp0 = qs[ilaunch]
 	sp0 = calc_entropy(tks[ilaunch],ps[ilaunch],qs[ilaunch])
-	mp = F(1)
+	mp0 = F(1)
 	s_mix[ilaunch] = sp0;
 	qt_mix[ilaunch] = qtp0;
 	tk_guess = tks[ilaunch];
@@ -477,12 +483,16 @@ function calc_dilute_CAPE(ps::Vector{F},tks::Vector{F},qs::Vector{F},zs::Vector{
 
          sp  = sp  - dmpdp*dp*s_env 
          qtp = qtp - dmpdp*dp*qt_env 
-         mp  = mp  - dmpdp*dp
-		
+		 mp  = mp  - dmpdp*dp
+		 
+		 println(" p_env			sp				qtp				mp")
+		 println("$p_env	$sp		$qtp	$mp")
+
 		 # Entrain s and qt to next level.
 
          s_mix[i]  = (sp0  +  sp) / (mp0 + mp)
 		 qt_mix[i] = (qtp0 + qtp) / (mp0 + mp)
+	
 		 # The new parcel entropy and total water due to mixing are now calculated
 	
 
@@ -492,10 +502,17 @@ function calc_dilute_CAPE(ps::Vector{F},tks::Vector{F},qs::Vector{F},zs::Vector{
          tk_guess = tk_mix[i+1]
          
          tk_mix[i],qsat_mix[i] =  calc_entropy_inverse(s_mix[i],ps[i],qt_mix[i],tk_guess)  
-
 	end
 	
-	return tk_mix,qsat_mix
+	#return tk_mix,qsat_mix,qt_mix
+	tdiff = zero(tks)
+	for i in range(1,N)
+		tk_mix_v = virtualtemp(tk_mix[i],(qt_mix[i]/(1-qt_mix[i])))
+		tk_env_v = virtualtemp(tks[i],(qs[i]/(1-qs[i])))
+
+		tdiff[i] = tk_mix_v - tk_env_v
+	end
+	return tdiff
 end
 
 function calc_dCAPE(ps::Vector{F},tks::Vector{F},qs::Vector{F},zs::Vector{F},adv_q::Vector{F},adv_tk::Vector{F}) where F<:AbstractFloat
@@ -516,9 +533,9 @@ function calc_dCAPE(ps::Vector{F},tks::Vector{F},qs::Vector{F},zs::Vector{F},adv
 	thetae_env = thetae; 
 
 	thetae_env[pres.<(sp - 350)] .= 0; # Set elements above the lowest 350 hPa to 0
-	tmp,iparc = findmax(thetae_env); #Index of parcel level
+	tmp,iparc = findmax(thetae_env);findlastlevel
 
-	tk0 = tks[iparc]; q0 = qs[iparc]
+	tk0 = tks[iparc]; q0 = qs[iparc]findlast
  	tks = tks .+ adv_tk*3600
 	qs = qs .+ adv_q*3600
 	tks[ind] = tk0; qs[ind] = q0
@@ -609,7 +626,6 @@ function calc_entropy_inverse(s::F,p::F,qtot::F,tk_guess::F) where F<:AbstractFl
 		i += 1
 		
 	end
-	print(i)
 	esat = F(0.01)*saturation_vapor_pressure_liquid(tk)
 	qsat = epsl*esat/(p-esat)
 	return tk,qsat
@@ -679,16 +695,16 @@ function liftparcel(tk0::Real, p0::Real, rh0::Real,dp::Real=5)
 	pres = 100:dp:p0;
 
 	n = length(pres) - 1;
-	r_parc = zeros((n,)); #mixing ratio
-	tk_parc = zeros((n,));  
-	tkv_parc = zeros((n,)); 
+	r_parc = zeros(n); #mixing ratio
+	tk_parc = zeros(n);  
+	tkv_parc = zeros(n); 
 
 	i_lcl = findlast(pres.<p_lcl);
 
 	#From p0 to LCL, use dry adiabatic lapse rate:
-	r_parc[i_lcl:end] = r0;
-	tk_parc[i_lcl:end] = tk0 *(pres[i_lcl:end-1]./p0).^0.286;
-	tkv_parc[i_lcl:end] = virtualtemp(tk_parc[i_lcl:end],r_parc[i_lcl:end]);
+	r_parc[i_lcl:end] .= r0;
+	tk_parc[i_lcl:end] = tk0.*(pres[i_lcl:end-1]./p0).^0.286;
+	tkv_parc[i_lcl:end] = virtualtemp.(tk_parc[i_lcl:end],r_parc[i_lcl:end]);
 
 	i = i_lcl - 1;
 	# LCL reached, change to moist adiabatic lapse rate
