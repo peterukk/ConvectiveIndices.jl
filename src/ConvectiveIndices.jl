@@ -441,20 +441,19 @@ calc_dilute_CAPE(ps,tks,qs,zs,parcel_index=30), would use a surface parcel if le
 
 """
 
-function calc_dilute_CAPE(ps::Vector{F},tks::Vector{F},qs::Vector{F},zs::Vector{F}; parcel_index::Integer=0) where F<:AbstractFloat
+function calc_dilute_CAPE(ps::Vector{F},tks::Vector{F},qs::Vector{F},zs::Vector{F}; parcel_index::Integer=0,freezing::Integer=0) where F<:AbstractFloat
 	# p = pressure [hPa], tk = temp [K], q = spec. hum [kg/kg], z = height [m], s = entropy (J/kg)
 	sp = ps[end]
 	rhs = q_to_rh(tks,ps,qs)
 
 	if parcel_index > 0 # The parcel already decided
 		ilaunch = parcel_index
-		print(ilaunch)
 	else
 		theta,thetae = thermo_rh(tks,100*ps,rhs)
 		thetae[ps.<(sp - 350)] .= 0; # Set elements above the lowest 350 hPa to 0
 		thetae_max,ilaunch = findmax(thetae); #Index of parcel level
 	end
-	#println("ilaunch: ",ilaunch)
+	println("ilaunch: ",ilaunch)
 	# Initialize values
 	N = length(ps)
 
@@ -476,14 +475,13 @@ function calc_dilute_CAPE(ps::Vector{F},tks::Vector{F},qs::Vector{F},zs::Vector{
 	sp = F(0)		# Parcel entropy
 	mp = F(0)		# Parcel relative mass flux
 
-	# Initialization
+	# Initialization for variables at parcel launch level
 	qtp0 = qs[ilaunch]
 	sp0 = calc_entropy(tks[ilaunch],ps[ilaunch],qs[ilaunch])
 	mp0 = F(1)
 	s_mix[ilaunch] = sp0
 	qt_mix[ilaunch] = qtp0
 	tk_guess = tks[ilaunch]
-
 	tk_mix[ilaunch],qsat_mix[ilaunch] =  calc_entropy_inverse(sp0,ps[ilaunch],qtp0,tk_guess)
 
 
@@ -500,11 +498,11 @@ function calc_dilute_CAPE(ps::Vector{F},tks::Vector{F},qs::Vector{F},zs::Vector{
 		dpdz 	= -(p_env*g)/(R*tk_env) # hPa / m
 		dzdp 	= 1/dpdz 				# m / hPa      
 		dmpdp 	= dmpdz*dzdp 			# Entrainment rate (/hPa)
-
+		dmpdp = 0
+		
 		# Sum entrainment to current level
 		# entrains q,s out of intervening dp layers, in which linear variation is assumed
 		# so really it entrains the mean of the 2 stored values.
-
          sp  = sp  - dmpdp*dp*s_env 
          qtp = qtp - dmpdp*dp*qt_env 
 		 mp  = mp  - dmpdp*dp
@@ -513,7 +511,6 @@ function calc_dilute_CAPE(ps::Vector{F},tks::Vector{F},qs::Vector{F},zs::Vector{
 		 #println("$p_env	$sp		$qtp	$mp")
 
 		 # Entrain s and qt to next level.
-
          s_mix[i]  = (sp0  +  sp) / (mp0 + mp)
 		 qt_mix[i] = (qtp0 + qtp) / (mp0 + mp)
 	
@@ -523,7 +520,6 @@ function calc_dilute_CAPE(ps::Vector{F},tks::Vector{F},qs::Vector{F},zs::Vector{
 		# t[i,k] used as a first guess so that it converges faster.
 
          tk_guess = tk_mix[i+1]
-         
 		 tk_mix[i],qsat_mix[i] =  calc_entropy_inverse(s_mix[i],ps[i],qt_mix[i],tk_guess) 
 		 
 		 #tk_mix_v = tk_mix[i]
@@ -531,10 +527,27 @@ function calc_dilute_CAPE(ps::Vector{F},tks::Vector{F},qs::Vector{F},zs::Vector{
 		 tk_mix_v = virtualtemp(tk_mix[i],(qt_mix[i]/(1-qt_mix[i])))
 		 tk_env_v = virtualtemp(tks[i],(qs[i]/(1-qs[i])))
 		 tdiff[i] = (tk_mix_v + 0.5 - tk_env_v)/tk_env_v
-		 println("p, tmix, qmix")
-		 println([p_env,tk_mix[i],qsat_mix[i]])
+		 #println("p, tmix, qmix")
+		 #println([p_env,tk_mix[i],qsat_mix[i]])
 	end
 	#return tk_mix,qsat_mix,qt_mix
+	if freezing==1
+		xsh2o = F(0)
+		ds_xsh2o = F(0)
+		ds_freeze = F(0)
+
+		# ! Set parcel values at launch level assume no liquid water. 
+		tp[ilaunch] = tk_mix[ilaunch]
+		qstp[ilaunch] = qtp0
+		tkv[ilaunch] = virtualtemp(tp[ilaunch],qstp[ilaunch])
+
+
+		sp0 = calc_entropy(tks[ilaunch],ps[ilaunch],qs[ilaunch])
+		mp0 = F(1)
+		s_mix[ilaunch] = sp0
+		qt_mix[ilaunch] = qtp0
+		tk_guess = tks[ilaunch]
+	end
 
 	iLCL = findlast(qt_mix .>= qsat_mix)
 	iLFC = findlast(tdiff[1:iLCL].>0)
