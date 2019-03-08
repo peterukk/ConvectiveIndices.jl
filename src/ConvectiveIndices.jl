@@ -453,18 +453,24 @@ function calc_dilute_CAPE(ps::Vector{F},tks::Vector{F},qs::Vector{F},zs::Vector{
 		thetae[ps.<(sp - 350)] .= 0; # Set elements above the lowest 350 hPa to 0
 		thetae_max,ilaunch = findmax(thetae); #Index of parcel level
 	end
-	println("ilaunch: ",ilaunch)
+	#println("ilaunch: ",ilaunch)
+
 	# Initialize values
 	N = length(ps)
 
-	tfreez  = 	F(273.15) 	#K
 	g = F(9.80665)			# Gravity
 	R = F(287.04)			# gas constant
+	cpliq =	F(4.188e3)		# J/kg/K specific heat of liquid water (fresh)
+	tfreez = F(273.15) 		# K 
+	tscool = F(0)			# super cooled temperature offset (in degC) (eg -35).
+	latice = F(3.337e5)		# specific heat of fusion
+	lwmax = F(1.e-3)		# Maximum condesate that can be held in cloud before rainout.
 	tk_mix = zero(tks)		# Tempertaure of the entraining parcel
 	qt_mix = zero(tks)		# Total water of the entraining parcel
 	qsat_mix = zero(tks)	# Saturation mixing ratio of the entraining parcel
 	s_mix = zero(tks)		# Entropy of the entraining parcel
 	tdiff = zero(tks) 	 	# (virtual) temperature difference between environment and parcel
+
 	qtp = F(0)  			# Parcel total water	
 	sp = F(0)				# Parcel entropy
 	mp = F(0)				# Parcel relative mass flux
@@ -477,7 +483,7 @@ function calc_dilute_CAPE(ps::Vector{F},tks::Vector{F},qs::Vector{F},zs::Vector{
 	s_mix[ilaunch] = sp0
 	qt_mix[ilaunch] = qtp0
 	tk_mix[ilaunch],qsat_mix[ilaunch] =  calc_entropy_inverse(sp0,ps[ilaunch],qtp0,tk_guess)
-
+	
 
 	for i in range(ilaunch-1,1,step=-1)
 		# ps[i] is the current level, loop traverses back the array = upwards in the atmos. column
@@ -497,62 +503,70 @@ function calc_dilute_CAPE(ps::Vector{F},tks::Vector{F},qs::Vector{F},zs::Vector{
 		# Sum entrainment to current level
 		# entrains q,s out of intervening dp layers, in which linear variation is assumed
 		# so really it entrains the mean of the 2 stored values.
-         sp  = sp  - dmpdp*dp*s_env 
-         qtp = qtp - dmpdp*dp*qt_env 
-		 mp  = mp  - dmpdp*dp
+        sp  = sp  - dmpdp*dp*s_env 
+        qtp = qtp - dmpdp*dp*qt_env 
+		mp  = mp  - dmpdp*dp
 		 
-		 #println(" p_env			sp				qtp				mp")
-		 #println("$p_env	$sp		$qtp	$mp")
-
 		 # Entrain s and qt to next level.
-         s_mix[i]  = (sp0  +  sp) / (mp0 + mp)
-		 qt_mix[i] = (qtp0 + qtp) / (mp0 + mp)
+        s_mix[i]  = (sp0  +  sp) / (mp0 + mp)
+		qt_mix[i] = (qtp0 + qtp) / (mp0 + mp)
 	
 		# The new parcel entropy and total water due to mixing are now calculated
 
 		# Invert entropy from s and q to determine T and qsat of mixture 
 		# t[i,k] used as a first guess so that it converges faster.
 
-         tk_guess = tk_mix[i+1]
-		 tk_mix[i],qsat_mix[i] =  calc_entropy_inverse(s_mix[i],ps[i],qt_mix[i],tk_guess) 
+        tk_guess = tk_mix[i+1]
+		tk_mix[i],qsat_mix[i] =  calc_entropy_inverse(s_mix[i],ps[i],qt_mix[i],tk_guess) 
 		 
 		 #tk_mix_v = tk_mix[i]
-		 #tk_env_v = tks[i]
-		 tk_mix_v = virtualtemp(tk_mix[i],(qt_mix[i]/(1-qt_mix[i])))
-		 tk_env_v = virtualtemp(tks[i],(qs[i]/(1-qs[i])))
-		 tdiff[i] = (tk_mix_v + 0.5 - tk_env_v)/tk_env_v
+		 #tk_env_v = tks[i])
+		 
 		 #println("p, tmix, qmix")
 		 #println([p_env,tk_mix[i],qsat_mix[i]])
 	end
 	#return tk_mix,qsat_mix,qt_mix
-	if freezing==1
-		xsh2o = F(0)
-		ds_xsh2o = F(0)		# Entropy change due to loss of condensate
-		ds_freeze = F(0)	# Entropy change dut to freezing of precipitation
+
+	if freezing==1	# ACCOUNT FOR FREEZING/CONDENSATION EFFECT ON TEMPERATURE
+
+	# So we now have a profile of entropy and total water of the entraining parcel Varying with height 
+	# from the launch level klaunch parcel=environment. To the top allowed level for the existence of convection.
+	# Now we have to adjust these values such that the water held in vaopor is < or = to qsmix. Therefore, we assume
+	# that the cloud holds a certain amount of condensate (lwmax) and the rest is rained out (xsh2o). This, obviously 
+	# provides latent heating to the mixed parcel and so this has to be added back to it. 
+	# But does this also increase qsmix as well? Also freezing processes
+
+		xsh2o = zero(tks)		# Condensate lost from parcel
+		ds_xsh2o = zero(tks)	# Entropy change due to loss of condensate
+		ds_freeze = zero(tks)	# Entropy change dut to freezing of precipitation
 
 		# ! Set parcel values at launch level assume no liquid water. 
-		tp[ilaunch] = tk_mix[ilaunch]
-		qstp[ilaunch] = qtp0
-		tkv[ilaunch] = virtualtemp(tp[ilaunch],qstp[ilaunch])
+		qp = zero(tks) 			# Parcel water vapour (saturated value above lcl)
+		qp[ilaunch] = qtp0		# Just the wv at launch level
+
+		# tk_v[ilaunch] = virtualtemp(tk_mix[ilaunch],qp[ilaunch])
+		new_s = F(0)
+		new_q = F(0)
 
 		for i in range(ilaunch-1,1,step=-1)
-			# Iterature 2 times for s,qt changes
+			# Iterate 2 times for s,qt changes
 			for j in [1,2]
 				# Rain (xsh2o) is excess condensate, bar LWMAX (Accumulated loss from qtmix).
-				xsh20[i] = maximum(F(0),(qt_mix[i] - qsat_mix[i] -lwmax) )
+				
+				xsh2o[i] = maximum( [F(0),(qt_mix[i] - qsat_mix[i] - lwmax)] )
 
 				# contribution to entropy from precip loss of condensate  (Accumulated change from smix).(-ve)
-				ds_xsh2o[i] = ds_xsh2o[i] - cpliq * log (tk_mix[i]/tfreez) * maximum(F(0),(xsh2o[i] - xsh2o[i+1]) )
+				ds_xsh2o[i] = ds_xsh2o[i] - cpliq * log(tk_mix[i]/tfreez) * maximum( [F(0),(xsh2o[i] - xsh2o[i+1])] )
 				
 				# Entropy of freezing: latice times amount of water involved divided by T
 				 
 				if ( (tk_mix[i] <= tfreez+tscool) & (ds_freeze[i+1] == F(0)) ) # One off freezing of condensate. 
-					ds_freeze[k]) = (latice/tk_mix[i]) * maximum(F(0),qt_mix[i]-qsat_mix[i]-xsh2o[i]) ! Gain of LH
-				end if
+					ds_freeze[i] = (latice/tk_mix[i]) * maximum( [F(0),qt_mix[i]-qsat_mix[i]-xsh2o[i]] ) # Gain of LH
+				end
 				 
 				if ( (tk_mix[i] <= tfreez+tscool) & (ds_freeze[i+1] != F(0)) ) #  Continual freezing of additional condensate.
-					ds_freeze[k] = ds_freeze[i+1]+(latice/tk_mix[i]) * maximum(F(0),(qsat_mix[i+1]-qsat_mix[i]))
-				end if
+					ds_freeze[i] = ds_freeze[i+1]+(latice/tk_mix[i]) * maximum( [F(0),(qsat_mix[i+1]-qsat_mix[i])] )
+				end
 
 				# Adjust entropy and accordingly to sum of ds (be careful of signs).
 				new_s = s_mix[i] + ds_xsh2o[i] + ds_freeze[i] 
@@ -564,10 +578,26 @@ function calc_dilute_CAPE(ps::Vector{F},tks::Vector{F},qs::Vector{F},zs::Vector{
 
 				tk_mix[i],qsat_mix[i] =  calc_entropy_inverse(new_s,ps[i],new_q,tk_guess) 
 
+			end # Iteration loop for freezing processes
+	
+			if (new_q > qsat_mix[i]) # Super-saturated so condensate present - reduces buoyancy.
+				qp[i] = qsat_mix[i]
+			 else                    # Just saturated/sub-saturated - no condensate virtual effects
+				qp[i] = new_q 		 # in this case new_q is simply the old qt_mix (xsh2o is 0)
 			end
-		end
+			
+		end		# vertical loop for freezing processes
 
-	end
+	else # No freezing/condensation processes
+		qp = qt_mix # parcel water vapour = total water of the entraining parcel
+	end 
+
+	# Virtual temperature
+	tiedke_add = F(0)
+	tk_parcel_v = virtualtemp.(tk_mix, (qp ./ (1 .- qp)))
+	tk_env_v = virtualtemp.(tks, (qs ./ (1 .- qs)))
+	# Buoyancy
+	tdiff = (tk_parcel_v .+ tiedke_add .- tk_env_v)./tk_env_v
 
 	iLCL = findlast(qt_mix .>= qsat_mix)
 	iLFC = findlast(tdiff[1:iLCL].>0)
@@ -591,7 +621,7 @@ function calc_dilute_CAPE(ps::Vector{F},tks::Vector{F},qs::Vector{F},zs::Vector{
 		#CIN = g*trapz(zs[iLFC:ilaunch],tdiff[iLFC:ilaunch])
 	end
 	#return CAPE
-	return iLCL,iLFC,iEL,CAPE #,CIN,tdiff
+	return CAPE,ilaunch,iLCL,iLFC,iEL #,CIN,tdiff
 end
 
 function calc_dCAPE(ps::Vector{F},tks::Vector{F},qs::Vector{F},zs::Vector{F},adv_q::Vector{F},adv_tk::Vector{F}) where F<:AbstractFloat
