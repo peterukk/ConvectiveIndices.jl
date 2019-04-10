@@ -21,4 +21,5 @@ module ConvectiveIndices
 
 	include("thermodyn.jl")
 	include("utils.jl")
+	include("main_functions.jl")
 end
