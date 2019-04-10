@@ -36,17 +36,17 @@ end
 virtualtemp( tk, r )
 Return virtual temperature given temperature in K and mixing ratio in g/g
 """
-function virtualtemp(tk::Real, r::Real)
-	gc_ratio =  287.04/461.5;#epsilon=Rd/Rv, where Rd=gas const. for dry air and Rv=gas const. for water vap.
-	tk_v = tk.*(1.0+r/gc_ratio)./(1.0+r); #tk*(1 + 0.608*r);
+function virtualtemp(tk::F, r::F) where F<:AbstractFloat
+	gc_ratio =  F(287.04/461.5);#epsilon=Rd/Rv, where Rd=gas const. for dry air and Rv=gas const. for water vap.
+	tk_v = tk.*(F(1.0)+r/gc_ratio)./(F(1.0)+r); #tk*(1 + 0.608*r);
 end
 
 """
 rh_to_r( tk, p, r )
 Return mixing ratio [kg/kg] given temperature [K], pressure [hPa] and relative humidity [%] 
 """
-function rh_to_r(tk::Real, p::Real, RH::Real)
-	c = 18.0152/28.9644;
+function rh_to_r(tk::F, p::F, RH::F) where F<:AbstractFloat
+	c = F(18.0152/28.9644);
 	es = saturation_vapor_pressure_liquid(tk);
 	e = (RH/100)*es;
 	Pd = p*100 - e;
@@ -57,9 +57,9 @@ end
 r_to_rh( tk, p, r )
 Return relative humidity [%] given temperature [K], pressure [hPa] and mixing ratio [kg/kg]
 """
-function r_to_rh(tk::Real, p::Real, r::Real)
+function r_to_rh(tk::F, p::F, r::F) where F<:AbstractFloat
 	es = saturation_vapor_pressure_liquid(tk);
-	c = 18.0152/28.9644;
+	c = F(18.0152/28.9644);
 	e = (r*p*100)/(r + c);
 	RH = 100 * e/es;
 end
