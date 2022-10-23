@@ -214,7 +214,7 @@ function calc_dilute_CAPE(ps::Vector{F},tks::Vector{F},qs::Vector{F},zs::Vector{
 	tscool = F(0)			# super cooled temperature offset (in degC) (eg -35).
 	latice = F(3.337e5)		# specific heat of fusion
 	lwmax = F(1.e-3)		# Maximum condesate that can be held in cloud before rainout.
-	tk_mix = zero(tks)		# Tempertaure of the entraining parcel
+	tk_mix = zero(tks)		# Tempertaure of thcalc_dilute_dCAPEe entraining parcel
 	qt_mix = zero(tks)		# Total water of the entraining parcel
 	qsat_mix = zero(tks)	# Saturation mixing ratio of the entraining parcel
 	s_mix = zero(tks)		# Entropy of the entraining parcel
@@ -377,7 +377,6 @@ end
 
 function calc_dilute_dCAPE(ps::Vector{F},tks::Vector{F},qs::Vector{F},zs::Vector{F},adv_tk::Vector{F},adv_q::Vector{F}) where F<:AbstractFloat
 
-	g = F(9.80665)
 	sp = ps[end]
 	rhs = q_to_rh(tks,ps,qs)
 
@@ -396,12 +395,11 @@ function calc_dilute_dCAPE(ps::Vector{F},tks::Vector{F},qs::Vector{F},zs::Vector
 	# in dCAPE, the environmental (but only environmental) temp and humidity gain an increment from 
 	tks = tks .+ adv_tk 
 	qs = qs .+ adv_q 
-	# adv_T is (u*dT/dx) = [ m/s * K/m] = [K/s]. Multiply by 3600 to get hourly increment
+	# adv_T is (u*dT/dx) = [ m/s * K/m] = [K/s]
 
-	# The advective increment is in units of temperature or moisture per second.
-	# if multiplied my e.g. 3600 to get the hourly change, the updated q values are sometimes far too small, resulting in negative relative hum
- 	tks = tks .+ adv_tk 
-	qs = qs .+ adv_q 
+  qs[qs .< 0.0] .= 0.0
+
+	# if multiplied by 3600 to get the hourly change, the updated q values are sometimes far too small, resulting in negative relative hum
 	tks[ilaunch] = tk0; qs[ilaunch] = q0
 
 	CAPE_new = calc_dilute_CAPE(ps,tks,qs,zs,parcel_index=ilaunch)
